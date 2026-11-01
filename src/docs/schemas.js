@@ -1,6 +1,7 @@
 // Schemas de RESPOSTA da documentação (OpenAPI 3.1 / JSON Schema). Os de ENTRADA vêm direto dos schemas zod das rotas.
 // Todos fechados (additionalProperties: false, todos os campos obrigatórios): os testes validam respostas reais contra eles,
 // então qualquer campo novo ou removido nas respostas da API faz um teste falhar até a documentação ser atualizada.
+import { PAYOUT_RELEASE_MODES, PAYOUT_RULE_SOURCES, PAYOUT_RULE_TYPES, PAYOUT_STATUSES } from '../utils/payouts.js';
 import { CONDITIONS } from '../utils/tooth.js';
 import { PAYMENT_METHODS, PAYMENT_STATUSES } from '../utils/payments.js';
 
@@ -13,6 +14,7 @@ const nDateTime = { type: ['string', 'null'], format: 'date-time' };
 const date = { type: 'string', format: 'date' };
 const nDate = { type: ['string', 'null'], format: 'date' };
 const int = { type: 'integer' };
+const num = { type: 'number' };
 const nint = { type: ['integer', 'null'] };
 const bool = { type: 'boolean' };
 const enumOf = (values, description) => ({ type: 'string', enum: values, ...(description && { description }) });
@@ -76,6 +78,7 @@ export const SCHEMAS = {
   }),
   Procedimento: obj({
     id: uuid, name: str, category: nstr, priceCents: money,
+    costCents: { ...money, description: 'Custo (laboratório/material). Só entra no cálculo do repasse se a clínica optar por descontar custos.' },
     odontogramCondition: { ...nEnumOf(CONDITIONS), description: 'Condição marcada no dente quando o procedimento é realizado.' },
     active: bool, createdAt: dateTime, updatedAt: dateTime,
   }),
@@ -137,6 +140,94 @@ export const SCHEMAS = {
     balanceCents: { ...money, description: 'Saldo ainda sem lançamento (nunca negativo).' },
   }),
   PagamentosDoOrcamento: obj({ summary: ref('ResumoFinanceiro'), data: array('Pagamento') }),
+
+  ConfigRepasse: obj({
+    releaseOn: enumOf(PAYOUT_RELEASE_MODES, 'payment = a comissão é liberada na proporção do que o paciente pagou; procedure = liberada por inteiro quando o procedimento é realizado.'),
+    deductCosts: { type: 'boolean', description: 'Desconta o custo do procedimento antes de calcular a comissão.' },
+    deductCardFees: { type: 'boolean', description: 'Desconta a taxa do cartão (só em liberação por pagamento e só em comissões em percentual).' },
+    creditCardFeePercent: num, debitCardFeePercent: num,
+    defaultPercent: { ...num, description: 'Percentual usado quando não há regra do procedimento nem percentual do dentista.' },
+  }),
+  RegraOrigem: enumOf(PAYOUT_RULE_SOURCES, 'dentist_procedure = regra do dentista naquele procedimento; procedure = regra do procedimento; dentist = percentual do dentista; clinic_default = percentual padrão da clínica.'),
+  RegraRepasse: obj({
+    id: uuid, procedure: obj({ id: uuid, name: str }), dentist: { ...obj({ id: uuid, name: str }), type: ['object', 'null'] },
+    type: enumOf(PAYOUT_RULE_TYPES, 'percent = percentual da base; fixed = valor fixo por procedimento realizado.'),
+    percent: { type: ['number', 'null'] }, fixedCents: nint, createdAt: dateTime, updatedAt: dateTime,
+  }),
+  RegraAplicada: obj({
+    dentist: obj({ id: uuid, name: str }), procedure: obj({ id: uuid, name: str }), source: ref('RegraOrigem'),
+    type: enumOf(PAYOUT_RULE_TYPES), percent: { type: ['number', 'null'] }, fixedCents: nint,
+  }),
+  LancamentoRepasse: obj({
+    id: uuid, budgetId: uuid,
+    item: obj({ id: uuid, procedure: obj({ id: uuid, name: str }), tooth: nint, faces: nstr }),
+    patient: obj({ id: uuid, name: str }), dentist: obj({ id: uuid, name: str }), performedAt: dateTime,
+    grossCents: { ...money, description: 'Valor do procedimento já com a parte do desconto do orçamento.' },
+    costCents: { ...money, description: 'Custo descontado (zero se a clínica não desconta custos).' },
+    baseCents: { ...money, description: 'Base de cálculo: valor menos custo.' },
+    rule: obj({ source: ref('RegraOrigem'), type: enumOf(PAYOUT_RULE_TYPES), percent: { type: ['number', 'null'] }, fixedCents: nint }),
+    releaseOn: enumOf(PAYOUT_RELEASE_MODES),
+    commissionCents: { ...money, description: 'Comissão total quando tudo for recebido. Congelada na execução.' },
+    releasedCents: { type: 'integer', description: 'Parte já liberada até a data consultada.' },
+    paidCents: { type: 'integer', description: 'Já repassado ao dentista (fechamentos pagos).' },
+    balanceCents: { type: 'integer', description: 'Liberado menos pago. Negativo quando um pagamento do paciente foi estornado depois do repasse.' },
+  }),
+  SaldoDentista: obj({
+    dentist: obj({ id: uuid, name: str }), entriesCount: int, commissionCents: int, releasedCents: int, paidCents: int, balanceCents: int,
+  }),
+  SaldosRepasse: obj({
+    until: date,
+    data: array('SaldoDentista'),
+    totals: obj({ commissionCents: int, releasedCents: int, paidCents: int, balanceCents: int }),
+  }),
+  FechamentoRepasse: obj({
+    id: uuid, dentist: obj({ id: uuid, name: str }), until: date, totalCents: money,
+    method: enumOf(PAYMENT_METHODS), paidAt: dateTime, notes: nstr, status: enumOf(PAYOUT_STATUSES, 'paid = pago; canceled = desfeito (o saldo volta aos lançamentos).'),
+    canceledReason: nstr, canceledAt: nDateTime, createdAt: dateTime,
+  }),
+  FechamentoRepasseDetalhe: obj({
+    id: uuid, dentist: obj({ id: uuid, name: str }), until: date, totalCents: money,
+    method: enumOf(PAYMENT_METHODS), paidAt: dateTime, notes: nstr, status: enumOf(PAYOUT_STATUSES),
+    canceledReason: nstr, canceledAt: nDateTime, createdAt: dateTime,
+    lines: { type: 'array', items: obj({ entryId: uuid, amountCents: { type: 'integer', description: 'Negativo = desconto de pagamento estornado.' }, performedAt: dateTime, procedure: str, patient: str }) },
+  }),
+
+  RelatorioMensal: obj({
+    month: str, from: date, to: date,
+    cash: obj({
+      receivedCents: { ...money, description: 'Tudo que entrou no mês (inclui o que foi estornado depois).' },
+      refundedCents: { ...money, description: 'Estornos feitos no mês, de pagamentos recebidos em qualquer data.' },
+      netCashCents: { type: 'integer', description: 'Recebido menos estornos.' },
+      byMethod: { type: 'array', items: obj({ method: nMethod, amountCents: money }) },
+      dueInMonth: obj({ pendingCents: { ...money, description: 'A receber com vencimento no mês, ainda no prazo.' }, overdueCents: { ...money, description: 'Com vencimento no mês e já vencido (hoje).' } }),
+    }),
+    production: obj({
+      proceduresCount: int,
+      producedCents: { ...money, description: 'Valor de tabela dos procedimentos realizados no mês (antes do desconto do orçamento).' },
+      topProcedures: { type: 'array', description: 'Até 5, do maior para o menor valor produzido.', items: obj({ procedure: obj({ id: uuid, name: str }), count: int, producedCents: money }) },
+    }),
+    appointments: obj({
+      total: int, scheduled: int, confirmed: int, attended: int, no_show: int, canceled: int,
+      attendanceRate: { type: ['number', 'null'], description: 'Atendidos / (atendidos + faltas); null sem base.' },
+      noShowRate: { type: ['number', 'null'], description: 'Faltas / (atendidos + faltas); null sem base.' },
+    }),
+    budgets: obj({
+      createdCount: int, rejectedCount: int, approvedCount: int,
+      approvedCents: { ...money, description: 'Total (itens menos desconto) dos orçamentos aprovados no mês.' },
+      conversionRate: { type: ['number', 'null'], description: 'Dos orçamentos criados no mês, a parte que já foi aprovada; null sem orçamentos.' },
+    }),
+    newPatients: int,
+    payouts: obj({
+      commissionCents: { ...money, description: 'Comissão gerada pelos procedimentos realizados no mês.' },
+      paidCents: { ...money, description: 'Repasses pagos aos dentistas no mês.' },
+      balanceAtEndCents: { type: 'integer', description: 'O que a clínica devia aos dentistas no último dia do mês.' },
+    }),
+    resultCents: { type: 'integer', description: 'Caixa líquido menos repasses pagos.' },
+    dentists: { type: 'array', items: obj({ dentist: obj({ id: uuid, name: str }), proceduresCount: int, producedCents: money, commissionCents: money, attendedCount: int }) },
+  }),
+  EvolucaoMensal: obj({
+    data: { type: 'array', items: obj({ month: str, receivedCents: money, refundedCents: money, producedCents: money, payoutsPaidCents: money, newPatients: int }) },
+  }),
 
   MarcacaoDente: obj({
     id: uuid, tooth: int, faces: nstr, condition: enumOf(CONDITIONS), notes: nstr, recordedOn: date,

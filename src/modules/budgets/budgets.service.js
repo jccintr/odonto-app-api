@@ -4,6 +4,7 @@ import { badRequest, conflict, forbidden, notFound, unprocessable } from '../../
 import { toBudgetDto, toBudgetSummaryDto } from '../../utils/dto.js';
 import { businessDate } from '../../utils/dates.js';
 import { pageResult, paginate } from '../../utils/pagination.js';
+import { recordExecution } from '../payouts/payouts.accrual.js';
 
 // "completed" não é escolhido por ninguém: acontece sozinho quando não resta item pendente
 const TRANSITIONS = { open: ['approved', 'rejected'], rejected: ['open'], approved: [], completed: [] };
@@ -240,6 +241,7 @@ export function performItem(auth, id, itemId, { dentistId, performedAt }) {
         condition: item.odontogram_condition, source_item_id: item.id, recorded_by: auth.userId, recorded_on: businessDate(when),
       });
     }
+    await recordExecution(trx, { auth, budget, item, dentistId: performer, performedAt: when });
     await completeIfFinished(trx, id);
     return detail(trx, auth, id);
   });

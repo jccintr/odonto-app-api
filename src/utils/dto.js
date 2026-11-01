@@ -43,6 +43,7 @@ export const toProcedureDto = (p) => ({
   name: p.name,
   category: p.category,
   priceCents: p.price_cents,
+  costCents: p.cost_cents,
   odontogramCondition: p.odontogram_condition,
   active: p.active,
   createdAt: p.created_at,
@@ -144,4 +145,47 @@ export const toToothRecordDto = (r) => ({
   recordedBy: r.recorded_by,
   sourceItemId: r.source_item_id,
   createdAt: r.created_at,
+});
+
+export const toPayoutRuleDto = (r) => ({
+  id: r.id,
+  procedure: { id: r.procedure_id, name: r.procedure_name },
+  dentist: r.dentist_id ? { id: r.dentist_id, name: r.dentist_name } : null,
+  type: r.type,
+  percent: num(r.percent),
+  fixedCents: r.fixed_cents,
+  createdAt: r.created_at,
+  updatedAt: r.updated_at,
+});
+
+export const toPayoutEntryDto = ({ entry: e, released, paid, balance }) => ({
+  id: e.id,
+  budgetId: e.budget_id,
+  item: { id: e.item_id, procedure: { id: e.procedure_id, name: e.procedure_name }, tooth: e.tooth, faces: e.faces },
+  patient: { id: e.patient_id, name: e.patient_name },
+  dentist: { id: e.dentist_id, name: e.dentist_name },
+  performedAt: e.performed_at,
+  grossCents: e.gross_cents,
+  costCents: e.cost_cents,
+  baseCents: e.base_cents,
+  rule: { source: e.rule_source, type: e.rule_type, percent: num(e.rule_percent), fixedCents: e.rule_fixed_cents },
+  releaseOn: e.terms.releaseOn,
+  commissionCents: e.commission_cents,
+  releasedCents: released,
+  paidCents: paid,
+  balanceCents: balance,
+});
+
+export const toPayoutDto = (p) => ({
+  id: p.id,
+  dentist: { id: p.dentist_id, name: p.dentist_name },
+  until: p.until,
+  totalCents: p.total_cents,
+  method: p.method,
+  paidAt: p.paid_at,
+  notes: p.notes,
+  status: p.status,
+  canceledReason: p.canceled_reason,
+  canceledAt: p.canceled_at,
+  createdAt: p.created_at,
 });

@@ -116,6 +116,34 @@ it('percorre o sistema inteiro e todas as rotas respondem como a documentação 
   await step('receber', api().post(`/api/payments/${plan[0].id}/pay`).set(admin).send({ method: 'pix' }), 200);
   await step('cancelar parcela', api().post(`/api/payments/${plan[1].id}/cancel`).set(admin).send({ reason: 'Paciente quitou em dinheiro' }), 200);
 
+  // ---- repasse ao dentista ----
+  await step('configurar repasse', api().patch('/api/payouts/settings').set(admin).send({ releaseOn: 'procedure', deductCosts: true, defaultPercent: 30 }), 200);
+  await step('ver configuração', api().get('/api/payouts/settings').set(admin), 200);
+  const exception = await step('criar regra', api().post('/api/payouts/rules').set(admin).send({ procedureId: procedure.id, dentistId: dentist.id, type: 'percent', percent: 50 }), 201);
+  await step('alterar regra', api().patch(`/api/payouts/rules/${exception.id}`).set(admin).send({ type: 'fixed', fixedCents: 2500 }), 200);
+  await step('listar regras', api().get('/api/payouts/rules').set(admin), 200);
+  const applied = await step('qual regra vale', api().get(`/api/payouts/rules/resolve?dentistId=${dentist.id}&procedureId=${procedure.id}`).set(admin), 200);
+  expect(applied).toMatchObject({ source: 'dentist_procedure', type: 'fixed', fixedCents: 2500 });
+  await step('remover regra', api().delete(`/api/payouts/rules/${exception.id}`).set(admin), 204);
+  // o procedimento realizado antes da configuração gerou lançamento com a regra do dentista (40%) sobre R$ 194,29:
+  // R$ 200,00 menos a parte do desconto (R$ 10,00 de um orçamento de R$ 350,00)
+  const lines = await step('lançamentos', api().get('/api/payouts/entries').set(admin), 200);
+  expect(lines.data).toHaveLength(1);
+  expect(lines.data[0]).toMatchObject({ rule: { source: 'dentist', percent: 40 }, commissionCents: 7772 });
+  await step('saldos', api().get('/api/payouts/balances').set(admin), 200);
+  const payout = await step('pagar repasse', api().post('/api/payouts').set(admin).send({ dentistId: dentist.id, method: 'pix', notes: 'Fechamento' }), 201);
+  expect(payout.totalCents).toBe(lines.data[0].releasedCents);
+  await step('listar fechamentos', api().get('/api/payouts').set(admin), 200);
+  await step('consultar fechamento', api().get(`/api/payouts/${payout.id}`).set(admin), 200);
+  await step('desfazer fechamento', api().post(`/api/payouts/${payout.id}/cancel`).set(admin).send({ reason: 'Teste' }), 200);
+
+  // ---- relatórios gerenciais ----
+  const report = await step('relatório do mês', api().get('/api/reports/monthly').set(admin), 200);
+  expect(report.production.proceduresCount).toBe(1);
+  expect(report.dentists[0].dentist.id).toBe(dentist.id);
+  const trend = await step('evolução', api().get('/api/reports/trend?months=3').set(admin), 200);
+  expect(trend.data).toHaveLength(3);
+
   // ---- nenhuma rota ficou de fora ----
   const missing = Object.entries(spec.paths).flatMap(([path, methods]) =>
     Object.entries(methods).flatMap(([method, operation]) => {

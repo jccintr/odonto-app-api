@@ -18,6 +18,7 @@ const operations = Object.entries(spec.paths).flatMap(([path, methods]) =>
     key: `${method.toUpperCase()} ${path}`,
     method: method.toUpperCase(),
     regex: new RegExp(`^${path.replace(/\{[^}]+\}/g, '[^/]+')}$`),
+    params: (path.match(/\{/g) ?? []).length,
     operation,
   })));
 
@@ -30,8 +31,11 @@ const validatorFor = (key, status, schema) => {
 export function checkContract(res) {
   const method = res.request.method;
   const { pathname } = new URL(res.request.url);
-  const matches = operations.filter((o) => o.method === method && o.regex.test(pathname));
-  if (matches.length === 0) return; // fora da API documentada: /, /health, /docs e rotas que não existem
+  const candidates = operations.filter((o) => o.method === method && o.regex.test(pathname));
+  if (candidates.length === 0) return; // fora da API documentada: /, /health, /docs e rotas que não existem
+  // caminho literal vence o com parâmetro (/payouts/settings x /payouts/{id}), como no Express e no OpenAPI
+  const fewest = Math.min(...candidates.map((o) => o.params));
+  const matches = candidates.filter((o) => o.params === fewest);
   if (matches.length > 1) throw new Error(`Rota ambígua na documentação: ${method} ${pathname}`);
 
   const { key, operation } = matches[0];

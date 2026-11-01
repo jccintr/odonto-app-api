@@ -35,8 +35,22 @@ export async function buildClinic(label) {
     .insert({ clinic_id: clinic.id, patient_id: patient.id, tooth: 11, condition: 'crown', recorded_by: admin.id, notes: `SEGREDO-${label}-dente` })
     .returning('*');
 
+  // repasse: uma regra (dentista 2 no procedimento) e um fechamento pago ao dentista 1, com o lançamento do procedimento dele
+  const [rule] = await db('payout_rules').insert({ clinic_id: clinic.id, procedure_id: procedure.id, dentist_id: d2.dentist.id, type: 'fixed', fixed_cents: 1500 }).returning('*');
+  const [entry] = await db('payout_entries')
+    .insert({
+      clinic_id: clinic.id, budget_id: first.budget.id, item_id: first.item.id, patient_id: patient.id, dentist_id: d1.dentist.id,
+      performed_at: new Date(), gross_cents: 10000, cost_cents: 0, base_cents: 10000, rule_source: 'clinic_default', rule_type: 'percent',
+      rule_percent: 30, commission_cents: 3000, terms: JSON.stringify({ releaseOn: 'procedure', deductCardFees: false, creditCardFeePercent: 0, debitCardFeePercent: 0 }),
+    })
+    .returning('*');
+  const [payout] = await db('payouts')
+    .insert({ clinic_id: clinic.id, dentist_id: d1.dentist.id, until: '2099-01-31', total_cents: 1000, method: 'pix', paid_at: new Date(), notes: `SEGREDO-${label}-repasse` })
+    .returning('*');
+  await db('payout_lines').insert({ clinic_id: clinic.id, payout_id: payout.id, entry_id: entry.id, amount_cents: 1000 });
+
   return {
-    label, clinic, admin, secretary, target, d1, d2, patient, procedure, record, ...first, second,
+    label, clinic, admin, rule, entry, payout, secretary, target, d1, d2, patient, procedure, record, ...first, second,
     tokens: { admin: signAccessToken(admin), secretary: signAccessToken(secretary), dentist: signAccessToken(d1.user) },
   };
 }

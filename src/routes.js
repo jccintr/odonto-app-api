@@ -7,6 +7,8 @@ import odontogramRoutes from './modules/odontogram/odontogram.routes.js';
 import patientsRoutes from './modules/patients/patients.routes.js';
 import budgetPaymentsRoutes from './modules/payments/budgetPayments.routes.js';
 import paymentsRoutes from './modules/payments/payments.routes.js';
+import payoutsRoutes from './modules/payouts/payouts.routes.js';
+import reportsRoutes from './modules/reports/reports.routes.js';
 import platformRoutes from './modules/platform/platform.routes.js';
 import proceduresRoutes from './modules/procedures/procedures.routes.js';
 import budgetsRoutes from './modules/budgets/budgets.routes.js';
@@ -28,6 +30,8 @@ export const MOUNTS = [
   ['/budgets/:id', budgetPaymentsRoutes],
   ['/budgets', budgetsRoutes],
   ['/payments', paymentsRoutes],
+  ['/payouts', payoutsRoutes],
+  ['/reports', reportsRoutes],
   ['/platform', platformRoutes],
 ];
 

@@ -87,7 +87,7 @@ Banco e schema únicos. Toda tabela de dados de clínica tem `clinic_id` e **Row
 | GET | `/api/dentists`, `/api/dentists/:id` | logado | Dentistas da clínica (dados profissionais) |
 | PATCH | `/api/dentists/:id` | admin | CRO, especialidade, cor da agenda e % de repasse |
 | GET | `/api/procedures`, `/api/procedures/:id` | logado | Tabela de procedimentos e preços (filtros e paginação) |
-| POST, PATCH | `/api/procedures`, `/api/procedures/:id` | admin | Cadastrar e alterar (preço em centavos; desativar em vez de excluir) |
+| POST, PATCH | `/api/procedures`, `/api/procedures/:id` | admin | Cadastrar e alterar (preço e custo em centavos; desativar em vez de excluir) |
 | GET | `/api/patients` | logado | Lista resumida (busca por nome, CPF ou telefone) |
 | GET | `/api/patients/:id` | logado | Ficha completa; **cada consulta é auditada** |
 | POST, PATCH | `/api/patients`, `/api/patients/:id` | logado | Cadastrar e alterar (arquivar com `active: false`; não há exclusão) |
@@ -107,6 +107,17 @@ Banco e schema únicos. Toda tabela de dados de clínica tem `clinic_id` e **Row
 | GET | `/api/payments`, `/api/payments/:id` | admin, secretária | Contas a receber (filtros por situação, forma, paciente, vencimento e `overdue`) |
 | PATCH | `/api/payments/:id` | admin, secretária | Alterar valor, vencimento e observações de parcela pendente |
 | POST | `/api/payments/:id/pay`, `/api/payments/:id/cancel` | admin, secretária | Receber e cancelar (estornar recebido: só admin) |
+| GET, PATCH | `/api/payouts/settings` | admin | Como a clínica repassa: quando libera, se desconta custo e taxa de cartão, % padrão |
+| GET, POST | `/api/payouts/rules` | admin | Regras por exceção (procedimento, com ou sem dentista): % ou valor fixo |
+| PATCH, DELETE | `/api/payouts/rules/:id` | admin | Alterar o valor ou remover a regra |
+| GET | `/api/payouts/rules/resolve` | admin | Qual regra vale para um dentista num procedimento |
+| GET | `/api/payouts/entries` | admin | Lançamentos de repasse (um por procedimento realizado) com liberado, pago e saldo |
+| GET | `/api/payouts/balances` | admin | Quanto a clínica deve a cada dentista até uma data |
+| GET, POST | `/api/payouts` | admin | Fechamentos pagos aos dentistas; pagar o saldo |
+| GET | `/api/payouts/:id` | admin | Fechamento com as linhas |
+| POST | `/api/payouts/:id/cancel` | admin | Desfazer um fechamento (o saldo volta) |
+| GET | `/api/reports/monthly` | admin | Relatório gerencial do mês (`?month=AAAA-MM`): caixa, produção, agenda, orçamentos, pacientes novos, repasse, resultado e quadro por dentista |
+| GET | `/api/reports/trend` | admin | Evolução mês a mês (`?months=6`) para gráficos do painel |
 | POST | `/api/platform/login` | plataforma | Entrar como administrador da plataforma |
 | GET, POST | `/api/platform/clinics` | plataforma | Listar e criar clínica (+ primeiro admin) |
 | GET, PATCH | `/api/platform/clinics/:id` | plataforma | Consultar e alterar (inclui suspender) |
@@ -161,6 +172,38 @@ Os testes impedem divergência: toda rota precisa estar documentada, os perfis d
 
 **Rota nova:** declare `validate`/`requireRole` normalmente, descreva-a em `src/docs/descriptions.js` e inclua-a em `tests/helpers/access.js`; os testes apontam o que faltar.
 
+## Repasse aos dentistas
+
+Modelado a partir do que os sistemas odontológicos brasileiros fazem (comissão em % ou valor fixo, regra geral com exceções, liberar pelo pagamento ou pela execução,
+descontar custo e taxa de cartão). Tudo é configurável por clínica e **só o administrador** acessa.
+
+- **Configuração** (`/api/payouts/settings`): `releaseOn` = `payment` (padrão: a comissão é liberada na proporção do que o paciente pagou do orçamento)
+  ou `procedure` (liberada por inteiro quando o procedimento é realizado); `deductCosts` desconta o custo do procedimento (`costCents`) da base;
+  `deductCardFees` desconta a taxa do cartão de crédito/débito (só em `payment` e só em comissões em %); `defaultPercent` é o % padrão da clínica.
+- **Qual regra vale** (do mais específico ao mais geral): regra do **dentista no procedimento** > regra do **procedimento** > **% do dentista**
+  (`PATCH /api/dentists/:id`) > **% padrão da clínica**. Regra pode ser `percent` ou `fixed` (valor por procedimento realizado).
+  `GET /api/payouts/rules/resolve` mostra qual vale.
+- **Base de cálculo:** preço do item, com a sua parte do desconto do orçamento (proporcional ao preço), menos o custo (se a clínica desconta, nunca acima do valor cobrado).
+- **Lançamento:** ao realizar o procedimento (`perform`) nasce um lançamento para quem **executou**, com a regra e a comissão **congeladas**.
+  Mudar configuração ou regras vale só para os próximos (como nos sistemas do mercado, não há cálculo retroativo). Lançamentos e linhas de fechamento são somente de inserção.
+- **Saldo** = liberado (até a data) menos o já repassado. Pagamento do paciente estornado depois do repasse deixa o saldo negativo, que é descontado no próximo fechamento.
+- **Fechamento** (`POST /api/payouts`): paga o saldo do dentista até `until` (para fechar o mês, use o último dia). `422 NOTHING_TO_PAY` se não houver saldo;
+  dois fechamentos simultâneos nunca pagam o mesmo saldo duas vezes. Cancelar um fechamento devolve o saldo.
+- Datas de corte seguem o fuso da clínica (`TIMEZONE`).
+
+## Relatórios gerenciais
+
+Só o administrador. Nada é guardado: cada consulta calcula direto das tabelas, por mês de calendário no fuso da clínica (`TIMEZONE`).
+
+- **Caixa:** recebido no mês (por forma de pagamento), estornos feitos no mês, líquido, e o que vence no mês (no prazo x vencido). Um pagamento recebido em fevereiro e estornado
+  em março conta como entrada em fevereiro e como estorno em março (o mês fechado não muda).
+- **Produção:** procedimentos realizados no mês, valor de tabela (antes do desconto do orçamento) e os 5 mais produtivos.
+- **Agenda:** atendimentos por situação, taxa de comparecimento e de faltas (atendidos / (atendidos + faltas); `null` sem base).
+- **Orçamentos:** criados, recusados, aprovados no mês (e valor) e conversão (dos criados no mês, quantos já foram aprovados).
+- **Repasse:** comissão gerada no mês, repasses pagos no mês e o saldo devido no último dia do mês. **Resultado** = caixa líquido menos repasses pagos.
+- **Por dentista:** procedimentos, produção, comissão e atendimentos.
+- `GET /api/reports/trend` devolve a série dos últimos meses (1 a 12), com meses sem movimento zerados.
+
 ## Estrutura
 
 ```
@@ -170,7 +213,7 @@ src/
   config/            variáveis de ambiente e mensagens de validação (zod em português)
   db/                pool, withTenant, helper de RLS
   middlewares/       autenticação/perfis, validação, erros, limite de requisições
-  modules/           auth, clinic, users, dentists, procedures, patients, appointments, budgets, odontogram, payments, platform (routes → service)
+  modules/           auth, clinic, users, dentists, procedures, patients, appointments, budgets, odontogram, payments, payouts, reports, platform (routes → service)
   services/          mailer (SMTP Hostinger), senha, tokens
   utils/             erros, DTOs, paginação, slug, limite de login
 templates/emails/    modelos HTML dos e-mails
@@ -179,5 +222,5 @@ tests/               suíte completa (globalSetup sobe o PostgreSQL de teste)
 
 ## Próximos módulos (ver roadmap da ficha técnica)
 
-Imagens e radiografias (Cloudinary) → repasse configurável → relatórios mensais →
+Imagens e radiografias (Cloudinary) →
 avisos de consulta e orçamentos (e-mail e WhatsApp). Ainda faltam na agenda: bloqueio de horários e horário de funcionamento.

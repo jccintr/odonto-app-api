@@ -62,6 +62,22 @@ describe('POST /api/procedures', () => {
   });
 });
 
+describe('custo do procedimento (usado no repasse)', () => {
+  it('nasce com custo zero, aceita informar e alterar o custo, e recusa valor inválido', async () => {
+    const { headers } = await setupUser();
+    const bare = await create(headers, { name: 'Limpeza' });
+    expect(bare.body.costCents).toBe(0);
+    const made = await create(headers, { name: 'Coroa', priceCents: 90000, costCents: 25000 });
+    expect(made.body.costCents).toBe(25000);
+    const changed = await api().patch(`/api/procedures/${made.body.id}`).set(headers).send({ costCents: 30000 });
+    expect(changed.body).toMatchObject({ costCents: 30000, priceCents: 90000 });
+    for (const bad of [-1, 10.5, 200_000_000]) {
+      expect((await create(headers, { name: `Inválido ${bad}`, costCents: bad })).status).toBe(400);
+      expect((await api().patch(`/api/procedures/${made.body.id}`).set(headers).send({ costCents: bad })).status).toBe(400);
+    }
+  });
+});
+
 describe('GET /api/procedures', () => {
   const seed = async () => {
     const { headers, clinic } = await setupUser();

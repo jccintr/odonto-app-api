@@ -39,6 +39,8 @@ const TAGS = [
   ['Agenda', 'Atendimentos agendados.'],
   ['Orçamentos', 'Orçamentos, itens, aprovação e execução dos procedimentos.'],
   ['Pagamentos', 'Recebimentos, parcelas, contas a receber e inadimplência.'],
+  ['Repasse', 'Repasse aos dentistas: configuração, regras, lançamentos, saldos e fechamentos (só administração).'],
+  ['Relatórios', 'Relatórios gerenciais mensais (só administração).'],
   ['Plataforma', 'Administração do sistema: clínicas (só o dono da plataforma).'],
 ];
 
@@ -48,7 +50,7 @@ function tagFor({ path }) {
   const group = path.split('/')[2];
   return {
     auth: 'Autenticação', clinic: 'Clínica', users: 'Usuários', dentists: 'Dentistas', procedures: 'Procedimentos',
-    patients: 'Pacientes', appointments: 'Agenda', budgets: 'Orçamentos', platform: 'Plataforma',
+    patients: 'Pacientes', appointments: 'Agenda', budgets: 'Orçamentos', payouts: 'Repasse', reports: 'Relatórios', platform: 'Plataforma',
   }[group];
 }
 

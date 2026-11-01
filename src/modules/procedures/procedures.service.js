@@ -3,7 +3,7 @@ import { conflict, notFound } from '../../utils/errors.js';
 import { toProcedureDto } from '../../utils/dto.js';
 import { escapeLike, pageResult, paginate } from '../../utils/pagination.js';
 
-const COLUMN = { priceCents: 'price_cents', odontogramCondition: 'odontogram_condition' };
+const COLUMN = { priceCents: 'price_cents', costCents: 'cost_cents', odontogramCondition: 'odontogram_condition' };
 const toColumns = (input) => Object.fromEntries(Object.entries(input).map(([key, value]) => [COLUMN[key] ?? key, value]));
 
 const duplicateName = () => conflict('Já existe um procedimento com este nome.');

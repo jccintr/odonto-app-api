@@ -75,6 +75,23 @@ export const ACCESS = {
   'PATCH /api/payments/:id': { access: FINANCE, params: { id: 'payment' }, body: () => ({ notes: 'obs' }) },
   'POST /api/payments/:id/pay': { access: FINANCE, params: { id: 'payment' }, body: () => ({ method: 'cash' }) },
   'POST /api/payments/:id/cancel': { access: FINANCE, params: { id: 'payment' }, body: () => ({}) },
+  // ---- repasse (só administração) ----
+  'GET /api/payouts/settings': { access: ADMIN, noRefs: true },
+  'PATCH /api/payouts/settings': { access: ADMIN, noRefs: true, body: () => ({ defaultPercent: 25 }) },
+  'GET /api/payouts/rules': { access: ADMIN, noRefs: true },
+  'GET /api/payouts/rules/resolve': { access: ADMIN, query: (f) => `?dentistId=${f.d1.dentist.id}&procedureId=${f.procedure.id}` },
+  'POST /api/payouts/rules': { access: ADMIN, body: (f) => ({ procedureId: f.procedure.id, dentistId: f.d1.dentist.id, type: 'percent', percent: 50 }) },
+  'PATCH /api/payouts/rules/:id': { access: ADMIN, params: { id: 'rule' }, body: () => ({ type: 'fixed', fixedCents: 1000 }) },
+  'DELETE /api/payouts/rules/:id': { access: ADMIN, params: { id: 'rule' } },
+  'GET /api/payouts/entries': { access: ADMIN, noRefs: true },
+  'GET /api/payouts/balances': { access: ADMIN, noRefs: true },
+  'GET /api/payouts': { access: ADMIN, noRefs: true },
+  'POST /api/payouts': { access: ADMIN, body: (f) => ({ dentistId: f.d1.dentist.id, method: 'pix' }) },
+  'GET /api/payouts/:id': { access: ADMIN, params: { id: 'payout' } },
+  'POST /api/payouts/:id/cancel': { access: ADMIN, params: { id: 'payout' }, body: () => ({}) },
+  // ---- relatórios (só administração) ----
+  'GET /api/reports/monthly': { access: ADMIN, noRefs: true },
+  'GET /api/reports/trend': { access: ADMIN, noRefs: true },
   // ---- plataforma ----
   'POST /api/platform/login': { access: 'public' },
   'GET /api/platform/clinics': { access: 'platform', noRefs: true },
@@ -89,6 +106,6 @@ export const ACCESS = {
 export const RESOURCE = {
   target: (f) => f.target.id, dentist: (f) => f.d1.dentist.id, procedure: (f) => f.procedure.id, patient: (f) => f.patient.id,
   budget: (f) => f.budget.id, item: (f) => f.item.id, appointment: (f) => f.appointment.id, payment: (f) => f.payment.id,
-  record: (f) => f.record.id, clinic: (f) => f.clinic.id,
+  record: (f) => f.record.id, clinic: (f) => f.clinic.id, rule: (f) => f.rule.id, payout: (f) => f.payout.id,
 };
 

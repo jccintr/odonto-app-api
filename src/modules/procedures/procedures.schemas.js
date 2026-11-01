@@ -18,6 +18,7 @@ export const createProcedureSchema = z.object({
   name: nameField,
   category: optionalText(80, 'Categoria').nullable().optional(),
   priceCents: priceField.default(0),
+  costCents: priceField.default(0), // laboratório/material; entra na base do repasse se a clínica optar por descontar
   odontogramCondition: conditionField.nullable().optional(),
 });
 
@@ -26,6 +27,7 @@ export const updateProcedureSchema = z
     name: nameField,
     category: optionalText(80, 'Categoria').nullable(),
     priceCents: priceField,
+    costCents: priceField,
     odontogramCondition: conditionField.nullable(),
     active: z.boolean(),
   })

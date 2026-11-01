@@ -18,7 +18,7 @@ const clinicRoutes = entries.filter((e) => Array.isArray(e.access));
 const platformRoutes = entries.filter((e) => e.access === 'platform');
 const publicRoutes = entries.filter((e) => e.access === 'public');
 
-const urlFor = (e, view) => e.pattern.replace(/:(\w+)/g, (_, name) => RESOURCE[e.params[name]](view));
+const urlFor = (e, view) => e.pattern.replace(/:(\w+)/g, (_, name) => RESOURCE[e.params[name]](view)) + (e.query ? e.query(view) : '');
 const bodyFor = (e, view) => (e.body ? e.body(view) : {});
 
 function call(e, view, token) {

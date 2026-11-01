@@ -196,6 +196,62 @@ export const DOCS = {
     errors: { 409: 'Pagamento já cancelado (`PAYMENT_ALREADY_CANCELED`).' },
   },
 
+  // ---------------- repasse aos dentistas (só administração) ----------------
+  'GET /api/payouts/settings': {
+    summary: 'Configuração do repasse', status: 200, response: ref('ConfigRepasse'),
+    description: 'Como a clínica repassa aos dentistas. Sem nada salvo, valem os padrões: liberar conforme o paciente paga, sem descontar custos nem taxas, percentual padrão 0%.',
+  },
+  'PATCH /api/payouts/settings': {
+    summary: 'Alterar a configuração do repasse', status: 200, response: ref('ConfigRepasse'),
+    description: 'A mudança vale **daqui para frente**: cada procedimento realizado congela a regra do momento, então lançamentos antigos não são recalculados.',
+  },
+  'GET /api/payouts/rules': { summary: 'Listar regras por exceção', status: 200, response: array('RegraRepasse') },
+  'GET /api/payouts/rules/resolve': {
+    summary: 'Qual regra vale?', status: 200, response: ref('RegraAplicada'),
+    description: 'Mostra a regra que seria aplicada a um dentista num procedimento. Ordem, do mais específico ao mais geral: **dentista + procedimento**, **procedimento**, **percentual do dentista** (`PATCH /api/dentists/:id`), **percentual padrão da clínica**.',
+    errors: { 404: 'Dentista ou procedimento não encontrado (ou de outra clínica).' },
+  },
+  'POST /api/payouts/rules': {
+    summary: 'Criar regra por exceção', status: 201, response: ref('RegraRepasse'),
+    description: 'Regra de um procedimento, para todos os dentistas ou só para o `dentistId` informado. Tipo `percent` (percentual da base) ou `fixed` (valor fixo por procedimento realizado).',
+    errors: { 404: E404_REF, 409: 'Já existe regra para esse procedimento e dentista (`RULE_EXISTS`).' },
+  },
+  'PATCH /api/payouts/rules/:id': {
+    summary: 'Alterar o valor da regra', status: 200, response: ref('RegraRepasse'),
+    description: 'Troca o tipo e o valor (informe `type` e o valor correspondente). Procedimento e dentista não mudam: crie outra regra.',
+  },
+  'DELETE /api/payouts/rules/:id': { summary: 'Remover regra', status: 204, description: 'Não altera lançamentos já feitos: eles guardam a regra que foi aplicada.' },
+  'GET /api/payouts/entries': {
+    summary: 'Lançamentos de repasse', status: 200, response: page('LancamentoRepasse'),
+    description: 'Um lançamento por procedimento realizado, com a comissão calculada e quanto já está liberado, pago e a pagar na data `until` (padrão: hoje).',
+  },
+  'GET /api/payouts/balances': {
+    summary: 'Saldo por dentista', status: 200, response: ref('SaldosRepasse'),
+    description: 'O que a clínica deve a cada dentista até `until` (padrão: hoje). Saldo negativo = pagamento do paciente estornado depois do repasse; será descontado no próximo fechamento.',
+  },
+  'GET /api/payouts': { summary: 'Listar fechamentos', status: 200, response: page('FechamentoRepasse') },
+  'POST /api/payouts': {
+    summary: 'Pagar o repasse ao dentista', status: 201, response: ref('FechamentoRepasseDetalhe'),
+    description: 'Fecha e registra o pagamento do saldo do dentista até `until` (padrão: hoje; para fechar o mês, informe o último dia dele). Saldos negativos entram descontados. Dois fechamentos simultâneos nunca pagam o mesmo saldo duas vezes.',
+    errors: { 404: 'Dentista não encontrado (ou de outra clínica).', 422: 'Sem saldo a repassar até a data (`NOTHING_TO_PAY`).' },
+  },
+  'GET /api/payouts/:id': { summary: 'Consultar fechamento', status: 200, response: ref('FechamentoRepasseDetalhe'), description: 'Com as linhas (procedimento, paciente e valor).' },
+  'POST /api/payouts/:id/cancel': {
+    summary: 'Desfazer fechamento', status: 200, response: ref('FechamentoRepasseDetalhe'),
+    description: 'Use quando o pagamento ao dentista não saiu. O saldo volta aos lançamentos.',
+    errors: { 409: 'Fechamento já cancelado (`PAYOUT_ALREADY_CANCELED`).' },
+  },
+
+  // ---------------- relatórios gerenciais (só administração) ----------------
+  'GET /api/reports/monthly': {
+    summary: 'Relatório gerencial do mês', status: 200, response: ref('RelatorioMensal'),
+    description: 'Números do mês `month` (AAAA-MM; padrão: o mês atual), por data no fuso de Brasília: **caixa** (recebido por forma, estornos, líquido e o que vence no mês), **produção** (procedimentos realizados, valor de tabela e os mais produtivos), **agenda** (por situação, comparecimento e faltas), **orçamentos** (criados, aprovados e conversão), **pacientes novos**, **repasse** (comissão gerada, paga e saldo no fim do mês), **resultado** (caixa líquido menos repasses pagos) e o quadro **por dentista**. Taxas vêm `null` quando não há base de cálculo.',
+  },
+  'GET /api/reports/trend': {
+    summary: 'Evolução mês a mês', status: 200, response: ref('EvolucaoMensal'),
+    description: 'Os últimos `months` meses (1 a 12, padrão 6), terminando em `month` (padrão: o mês atual): recebido, estornado, produzido, repasses pagos e pacientes novos. Meses sem movimento vêm zerados.',
+  },
+
   // ---------------- plataforma ----------------
   'POST /api/platform/login': {
     summary: 'Entrar como administrador da plataforma', status: 200, response: ref('SessaoPlataforma'),
