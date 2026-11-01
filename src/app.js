@@ -2,6 +2,8 @@ import cors from 'cors';
 import express from 'express';
 import helmet from 'helmet';
 import { config } from './config/env.js';
+import { createDocsRouter } from './docs/docs.routes.js';
+import { buildOpenApi } from './docs/openapi.js';
 import db from './db/knex.js';
 import { errorHandler, notFoundHandler } from './middlewares/error.js';
 import { limiters, trustProxySetting } from './middlewares/rateLimit.js';
@@ -11,6 +13,9 @@ const app = express();
 
 app.set('trust proxy', trustProxySetting()); // IP real do cliente atrás do proxy (limite de requisições)
 app.disable('x-powered-by');
+
+// A documentação (Swagger UI) usa scripts e estilos próprios: fica antes do helmet para não cair na política de conteúdo restritiva dele.
+if (config.docsEnabled) app.use(createDocsRouter(buildOpenApi()));
 
 app.use(helmet());
 // CORS antes do limite: o 429 também precisa dos cabeçalhos para o front ler a mensagem.

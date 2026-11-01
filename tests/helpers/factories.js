@@ -2,8 +2,10 @@ import request from 'supertest';
 import app from '../../src/app.js';
 import db from '../../src/db/knex.js';
 import { hashPassword } from '../../src/services/password.js';
+import { withContract } from './contract.js';
 
-export const api = () => request(app);
+// toda resposta vista pelos testes é conferida contra a documentação (ver helpers/contract.js)
+export const api = () => withContract(request(app));
 export const bearer = (token) => ({ Authorization: `Bearer ${token}` });
 export const PASSWORD = 'senha-segura-123';
 

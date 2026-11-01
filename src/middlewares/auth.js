@@ -36,9 +36,13 @@ export const authenticate = async (req, res, next) => {
 };
 
 /** Exige um dos perfis informados (use depois de authenticate). */
-export const requireRole = (...roles) => (req, res, next) => {
-  if (!roles.includes(req.auth.role)) throw forbidden();
-  next();
+export const requireRole = (...roles) => {
+  const middleware = (req, res, next) => {
+    if (!roles.includes(req.auth.role)) throw forbidden();
+    next();
+  };
+  middleware.roles = roles; // lido pelo gerador da documentação (src/docs)
+  return middleware;
 };
 
 /** Valida o JWT da plataforma (segredo próprio). Preenche req.platformAdmin. */

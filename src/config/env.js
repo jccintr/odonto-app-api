@@ -31,6 +31,9 @@ export const config = {
   // fuso usado para "hoje" e datas de vencimento (produto brasileiro: horário de Brasília)
   get timezone() { return str('TIMEZONE', 'America/Sao_Paulo'); },
 
+  // documentação interativa em /docs e /openapi.json (DOCS_ENABLED=false desliga)
+  get docsEnabled() { return process.env.DOCS_ENABLED !== 'false'; },
+
   get webUrl() { return str('WEB_URL', 'http://localhost:5173').replace(/\/+$/, ''); },
   get corsOrigins() { return process.env.CORS_ORIGINS ? process.env.CORS_ORIGINS.split(',').map((s) => s.trim()).filter(Boolean) : null; },
 

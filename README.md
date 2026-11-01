@@ -148,6 +148,19 @@ Listas paginadas: `?page=1&perPage=20` → `{ data, page, perPage, total, totalP
 | secretary | ler | ler | tudo | tudo | ler e registrar decisão | só ler | tudo, menos estorno |
 | dentist | ler | ler | tudo | só a própria | só os próprios | ler e marcar | sem acesso |
 
+## Documentação da API (Swagger)
+
+Com a API no ar, abra **`/docs`** (Swagger UI interativo, com botão *Authorize* para colar o token) ou baixe **`/openapi.json`** (OpenAPI 3.1, importável no Bruno, Insomnia, Postman).
+Em produção, `DOCS_ENABLED=false` desliga as duas rotas.
+
+A documentação é **gerada do código**, não escrita à mão:
+- rotas, métodos, perfis permitidos, autenticação e esquemas de entrada vêm das próprias rotas (`validate`, `requireRole`, `authenticate`);
+- textos em português e formatos de resposta ficam em `src/docs/descriptions.js` e `src/docs/schemas.js`.
+
+Os testes impedem divergência: toda rota precisa estar documentada, os perfis documentados precisam bater com a matriz de segurança, e **toda resposta real dos testes é validada contra a documentação** (status e corpo). A `tests/journey.test.js` percorre todas as rotas com sucesso.
+
+**Rota nova:** declare `validate`/`requireRole` normalmente, descreva-a em `src/docs/descriptions.js` e inclua-a em `tests/helpers/access.js`; os testes apontam o que faltar.
+
 ## Estrutura
 
 ```
