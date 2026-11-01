@@ -43,6 +43,12 @@ export const ACCESS = {
   'GET /api/patients/:patientId/odontogram': { access: ANY, params: { patientId: 'patient' } },
   'POST /api/patients/:patientId/odontogram': { access: CLINICAL, params: { patientId: 'patient' }, body: () => ({ tooth: 12, condition: 'caries' }) },
   'DELETE /api/patients/:patientId/odontogram/:recordId': { access: CLINICAL, params: { patientId: 'patient', recordId: 'record' } },
+  'GET /api/patients/:patientId/images': { access: ANY, params: { patientId: 'patient' } },
+  'POST /api/patients/:patientId/images/upload-signature': { access: CLINICAL, params: { patientId: 'patient' }, body: () => ({}) },
+  'POST /api/patients/:patientId/images': { access: CLINICAL, params: { patientId: 'patient' }, body: () => ({ publicId: 'arquivo-que-nao-existe', kind: 'xray' }) },
+  'GET /api/patients/:patientId/images/:imageId': { access: ANY, params: { patientId: 'patient', imageId: 'image' } },
+  'PATCH /api/patients/:patientId/images/:imageId': { access: CLINICAL, params: { patientId: 'patient', imageId: 'image' }, body: () => ({ notes: 'obs' }) },
+  'DELETE /api/patients/:patientId/images/:imageId': { access: CLINICAL, params: { patientId: 'patient', imageId: 'image' } },
   // ---- agenda ----
   'GET /api/appointments': { access: ANY, noRefs: true },
   'GET /api/appointments/:id': { access: ANY, params: { id: 'appointment' }, scoped: 'resource' },
@@ -106,6 +112,6 @@ export const ACCESS = {
 export const RESOURCE = {
   target: (f) => f.target.id, dentist: (f) => f.d1.dentist.id, procedure: (f) => f.procedure.id, patient: (f) => f.patient.id,
   budget: (f) => f.budget.id, item: (f) => f.item.id, appointment: (f) => f.appointment.id, payment: (f) => f.payment.id,
-  record: (f) => f.record.id, clinic: (f) => f.clinic.id, rule: (f) => f.rule.id, payout: (f) => f.payout.id,
+  record: (f) => f.record.id, clinic: (f) => f.clinic.id, rule: (f) => f.rule.id, image: (f) => f.image.id, payout: (f) => f.payout.id,
 };
 

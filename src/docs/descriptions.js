@@ -4,6 +4,7 @@ import { array, page, ref } from './schemas.js';
 
 const E401_LOGIN = 'E-mail ou senha inválidos.';
 const E403_ACCESS = 'Conta sem acesso: `EMAIL_NOT_VERIFIED` (e-mail ainda não confirmado), `USER_INACTIVE` (usuário desativado) ou `CLINIC_SUSPENDED` (clínica suspensa).';
+const E503_STORAGE = 'Armazenamento de imagens não configurado (`STORAGE_NOT_CONFIGURED`).';
 const E404_REF = 'Paciente, dentista ou procedimento não encontrado (ou de outra clínica).';
 
 export const DOCS = {
@@ -94,7 +95,35 @@ export const DOCS = {
   'POST /api/patients/:patientId/odontogram': { summary: 'Marcar dente', status: 201, response: ref('MarcacaoDente'), description: 'Marcação manual. Dente na numeração FDI; faces V, L, M, D, O.' },
   'DELETE /api/patients/:patientId/odontogram/:recordId': { summary: 'Remover marcação', status: 204, description: 'Remoção lógica: a marcação sai do odontograma, mas fica registrada (quem removeu e quando).' },
 
-  // ---------------- agenda ----------------
+  // ---------------- imagens e radiografias ----------------
+  'GET /api/patients/:patientId/images': {
+    summary: 'Imagens do paciente', status: 200, response: page('Imagem'),
+    description: 'Da mais recente para a mais antiga (data da imagem). Cada item traz um link de download que expira (`url`). **A consulta é auditada.**',
+    errors: { 503: E503_STORAGE },
+  },
+  'POST /api/patients/:patientId/images/upload-signature': {
+    summary: 'Passo 1: assinar o envio da imagem', status: 200, response: ref('AssinaturaUpload'),
+    description: 'O app envia o arquivo **direto ao Cloudinary** (POST multipart em `uploadUrl`, com os `fields` devolvidos e o `file`); a API não recebe o arquivo. Depois, registre a imagem com `POST /api/patients/:patientId/images`.',
+    errors: { 503: 'Armazenamento de imagens não configurado (`STORAGE_NOT_CONFIGURED`).' },
+  },
+  'POST /api/patients/:patientId/images': {
+    summary: 'Passo 2: registrar a imagem enviada', status: 201, response: ref('Imagem'),
+    description: 'Informe o `publicId` recebido na assinatura. A API confere no armazenamento que o arquivo existe, é deste paciente e cabe no tamanho máximo, e guarda formato e tamanho reais (não os que o app informa). Arquivo grande demais é apagado.',
+    errors: {
+      404: 'Paciente não encontrado (ou de outra clínica).',
+      409: 'Imagem já registrada (`IMAGE_ALREADY_REGISTERED`).',
+      422: 'Arquivo de outro paciente (`INVALID_PUBLIC_ID`), não enviado ainda (`UPLOAD_NOT_FOUND`) ou acima do limite (`FILE_TOO_LARGE`).',
+      502: 'Falha ao consultar o armazenamento (`STORAGE_ERROR`).', 503: 'Armazenamento de imagens não configurado (`STORAGE_NOT_CONFIGURED`).',
+    },
+  },
+  'GET /api/patients/:patientId/images/:imageId': { summary: 'Consultar imagem', status: 200, response: ref('Imagem'), description: 'Com links novos de download. A consulta é auditada.', errors: { 503: E503_STORAGE } },
+  'PATCH /api/patients/:patientId/images/:imageId': { summary: 'Alterar dados da imagem', status: 200, response: ref('Imagem'), description: 'Tipo, dente, data e observações. O arquivo não muda.', errors: { 503: E503_STORAGE } },
+  'DELETE /api/patients/:patientId/images/:imageId': {
+    summary: 'Remover imagem', status: 204,
+    description: 'Apaga o arquivo no armazenamento e marca o registro como removido (fica registrado quem removeu e quando).',
+    errors: { 502: 'Não foi possível apagar no armazenamento; nada foi alterado (`STORAGE_ERROR`).', 503: E503_STORAGE },
+  },
+
   'GET /api/appointments': {
     summary: 'Listar atendimentos', status: 200, response: page('Atendimento'),
     description: 'Entra quem encosta no intervalo [`from`, `to`). O dentista só vê a própria agenda.',

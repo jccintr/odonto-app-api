@@ -35,6 +35,13 @@ export async function buildClinic(label) {
     .insert({ clinic_id: clinic.id, patient_id: patient.id, tooth: 11, condition: 'crown', recorded_by: admin.id, notes: `SEGREDO-${label}-dente` })
     .returning('*');
 
+  const [image] = await db('patient_images')
+    .insert({
+      clinic_id: clinic.id, patient_id: patient.id, kind: 'xray', public_id: `odontoapp/${clinic.id}/${patient.id}/8f14e45f-ceea-467a-9575-8f2d0f6e0b11`,
+      format: 'jpg', bytes: 120000, taken_on: '2026-01-10', notes: `SEGREDO-${label}-radiografia`, uploaded_by: admin.id,
+    })
+    .returning('*');
+
   // repasse: uma regra (dentista 2 no procedimento) e um fechamento pago ao dentista 1, com o lançamento do procedimento dele
   const [rule] = await db('payout_rules').insert({ clinic_id: clinic.id, procedure_id: procedure.id, dentist_id: d2.dentist.id, type: 'fixed', fixed_cents: 1500 }).returning('*');
   const [entry] = await db('payout_entries')
@@ -50,7 +57,7 @@ export async function buildClinic(label) {
   await db('payout_lines').insert({ clinic_id: clinic.id, payout_id: payout.id, entry_id: entry.id, amount_cents: 1000 });
 
   return {
-    label, clinic, admin, rule, entry, payout, secretary, target, d1, d2, patient, procedure, record, ...first, second,
+    label, clinic, admin, rule, entry, payout, image, secretary, target, d1, d2, patient, procedure, record, ...first, second,
     tokens: { admin: signAccessToken(admin), secretary: signAccessToken(secretary), dentist: signAccessToken(d1.user) },
   };
 }

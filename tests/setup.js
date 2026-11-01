@@ -20,12 +20,17 @@ vi.mock('../src/services/mailer.js', async (importOriginal) => ({
 }));
 const mailer = await import('../src/services/mailer.js');
 
+// Nenhum teste fala com o Cloudinary: o armazenamento vira o falso em memória (o real é testado em cloudinary.test.js).
+vi.mock('../src/services/cloudinary.js', () => import('./helpers/fakeStorage.js'));
+const { fake: storage } = await import('./helpers/fakeStorage.js');
+
 let tables;
 beforeEach(async () => {
   tables ??= (await db.raw("SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT LIKE 'knex_%'")).rows
     .map((r) => `"${r.tablename}"`).join(', ');
   await db.raw(`TRUNCATE ${tables} RESTART IDENTITY CASCADE`);
   resetRateLimits();
+  storage.reset();
   loginThrottle.clear();
   mailer.sendVerificationEmail.mockReset().mockResolvedValue({});
   mailer.sendPasswordResetEmail.mockReset().mockResolvedValue({});

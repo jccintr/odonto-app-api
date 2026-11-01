@@ -189,3 +189,19 @@ export const toPayoutDto = (p) => ({
   canceledAt: p.canceled_at,
   createdAt: p.created_at,
 });
+
+export const toImageDto = (i, links) => ({
+  id: i.id,
+  patientId: i.patient_id,
+  kind: i.kind,
+  tooth: i.tooth,
+  takenOn: i.taken_on,
+  notes: i.notes,
+  format: i.format,
+  bytes: i.bytes,
+  width: i.width,
+  height: i.height,
+  uploadedBy: i.uploaded_by,
+  createdAt: i.created_at,
+  ...links,
+});

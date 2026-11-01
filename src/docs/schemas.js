@@ -1,6 +1,7 @@
 // Schemas de RESPOSTA da documentação (OpenAPI 3.1 / JSON Schema). Os de ENTRADA vêm direto dos schemas zod das rotas.
 // Todos fechados (additionalProperties: false, todos os campos obrigatórios): os testes validam respostas reais contra eles,
 // então qualquer campo novo ou removido nas respostas da API faz um teste falhar até a documentação ser atualizada.
+import { IMAGE_FORMATS, IMAGE_KINDS } from '../utils/images.js';
 import { PAYOUT_RELEASE_MODES, PAYOUT_RULE_SOURCES, PAYOUT_RULE_TYPES, PAYOUT_STATUSES } from '../utils/payouts.js';
 import { CONDITIONS } from '../utils/tooth.js';
 import { PAYMENT_METHODS, PAYMENT_STATUSES } from '../utils/payments.js';
@@ -227,6 +228,26 @@ export const SCHEMAS = {
   }),
   EvolucaoMensal: obj({
     data: { type: 'array', items: obj({ month: str, receivedCents: money, refundedCents: money, producedCents: money, payoutsPaidCents: money, newPatients: int }) },
+  }),
+
+  Imagem: obj({
+    id: uuid, patientId: uuid,
+    kind: enumOf(IMAGE_KINDS, 'xray = radiografia; photo = foto clínica; document = documento/laudo; other = outro.'),
+    tooth: { ...nint, description: 'Dente relacionado (FDI), quando houver.' },
+    takenOn: date, notes: nstr,
+    format: enumOf(IMAGE_FORMATS), bytes: int, width: nint, height: nint, uploadedBy: nuuid, createdAt: dateTime,
+    url: { type: 'string', description: 'Link para baixar o original. Expira em `urlExpiresAt`: peça outro quando precisar.' },
+    urlExpiresAt: dateTime,
+  }),
+  AssinaturaUpload: obj({
+    publicId: { type: 'string', description: 'Identificador do arquivo no armazenamento. Envie-o no registro depois do upload.' },
+    uploadUrl: { type: 'string', description: 'Endereço do Cloudinary para o envio (POST multipart).' },
+    fields: obj({
+      public_id: str, type: str, allowed_formats: str, timestamp: int, api_key: str, signature: str,
+    }, 'Campos que o app deve enviar junto com o arquivo (`file`), exatamente como vieram.'),
+    allowedFormats: { type: 'array', items: enumOf(IMAGE_FORMATS) },
+    maxBytes: { type: 'integer', description: 'Tamanho máximo aceito no registro.' },
+    validForSeconds: { type: 'integer', description: 'Por quanto tempo a assinatura vale.' },
   }),
 
   MarcacaoDente: obj({

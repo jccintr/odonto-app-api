@@ -6,6 +6,7 @@ import db from '../src/db/knex.js';
 import { signPlatformToken } from '../src/services/tokens.js';
 import { sendPasswordResetEmail, sendVerificationEmail } from '../src/services/mailer.js';
 import { spec, validated } from './helpers/contract.js';
+import { fake } from './helpers/fakeStorage.js';
 import { api, bearer, createPlatformAdmin } from './helpers/factories.js';
 
 const tokenOf = (mock) => new URL(mock.mock.calls.at(-1)[0].url).searchParams.get('token');
@@ -74,6 +75,15 @@ it('percorre o sistema inteiro e todas as rotas respondem como a documentação 
   const mark = await step('marcar dente', api().post(`/api/patients/${patient.id}/odontogram`).set(admin).send({ tooth: 12, faces: 'od', condition: 'caries' }), 201);
   await step('ver odontograma', api().get(`/api/patients/${patient.id}/odontogram`).set(admin), 200);
   await step('remover marcação', api().delete(`/api/patients/${patient.id}/odontogram/${mark.id}`).set(admin), 204);
+
+  // ---- imagens e radiografias ----
+  const signed = await step('assinar envio', api().post(`/api/patients/${patient.id}/images/upload-signature`).set(admin).send({}), 200);
+  fake.upload(signed.publicId, { bytes: 250_000, format: 'jpg' });
+  const image = await step('registrar imagem', api().post(`/api/patients/${patient.id}/images`).set(admin).send({ publicId: signed.publicId, kind: 'xray', tooth: 16 }), 201);
+  await step('listar imagens', api().get(`/api/patients/${patient.id}/images`).set(admin), 200);
+  await step('consultar imagem', api().get(`/api/patients/${patient.id}/images/${image.id}`).set(admin), 200);
+  await step('alterar imagem', api().patch(`/api/patients/${patient.id}/images/${image.id}`).set(admin).send({ notes: 'Periapical do 16' }), 200);
+  await step('remover imagem', api().delete(`/api/patients/${patient.id}/images/${image.id}`).set(admin), 204);
 
   // ---- agenda ----
   const appointment = await step('agendar', api().post('/api/appointments').set(admin).send({

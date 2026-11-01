@@ -3,6 +3,7 @@ import appointmentsRoutes from './modules/appointments/appointments.routes.js';
 import authRoutes from './modules/auth/auth.routes.js';
 import clinicRoutes from './modules/clinic/clinic.routes.js';
 import dentistsRoutes from './modules/dentists/dentists.routes.js';
+import imagesRoutes from './modules/images/images.routes.js';
 import odontogramRoutes from './modules/odontogram/odontogram.routes.js';
 import patientsRoutes from './modules/patients/patients.routes.js';
 import budgetPaymentsRoutes from './modules/payments/budgetPayments.routes.js';
@@ -24,6 +25,7 @@ export const MOUNTS = [
   ['/users', usersRoutes],
   ['/dentists', dentistsRoutes],
   ['/patients/:patientId/odontogram', odontogramRoutes],
+  ['/patients/:patientId/images', imagesRoutes],
   ['/patients', patientsRoutes],
   ['/procedures', proceduresRoutes],
   ['/appointments', appointmentsRoutes],

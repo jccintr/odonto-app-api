@@ -35,6 +35,7 @@ const TAGS = [
   ['Dentistas', 'Dados profissionais dos dentistas.'],
   ['Procedimentos', 'Tabela de procedimentos e preços.'],
   ['Pacientes', 'Cadastro e ficha dos pacientes.'],
+  ['Imagens', 'Radiografias, fotos e documentos do paciente (armazenados no Cloudinary, privados).'],
   ['Odontograma', 'Marcações por dente do paciente.'],
   ['Agenda', 'Atendimentos agendados.'],
   ['Orçamentos', 'Orçamentos, itens, aprovação e execução dos procedimentos.'],
@@ -46,6 +47,7 @@ const TAGS = [
 
 function tagFor({ path }) {
   if (path.includes('/odontogram')) return 'Odontograma';
+  if (path.includes('/images')) return 'Imagens';
   if (path.includes('/payment')) return 'Pagamentos';
   const group = path.split('/')[2];
   return {

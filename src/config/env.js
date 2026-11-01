@@ -41,6 +41,15 @@ export const config = {
   get passwordResetMinutes() { return num('PASSWORD_RESET_MINUTES', 60); },
   get tokenResendCooldownSeconds() { return num('TOKEN_RESEND_COOLDOWN_SECONDS', 60); },
 
+  // armazenamento de imagens e radiografias (Cloudinary). Sem as três chaves, as rotas de imagem respondem 503.
+  get cloudinaryCloudName() { return process.env.CLOUDINARY_CLOUD_NAME; },
+  get cloudinaryApiKey() { return process.env.CLOUDINARY_API_KEY; },
+  get cloudinaryApiSecret() { return process.env.CLOUDINARY_API_SECRET; },
+  get cloudinaryFolder() { return str('CLOUDINARY_FOLDER', 'odontoapp').replace(/^\/+|\/+$/g, ''); },
+  // plano gratuito do Cloudinary: imagem de até 10 MB (e 25 megapixels); acima disso o próprio Cloudinary recusa o envio
+  get imageMaxMb() { return num('IMAGE_MAX_MB', 10); },
+  get imageUrlTtlSeconds() { return num('IMAGE_URL_TTL_SECONDS', 600); },
+
   get smtpHost() { return process.env.SMTP_HOST; },
   get smtpUser() { return process.env.SMTP_USER; },
   get smtpPassword() { return process.env.SMTP_PASSWORD; },

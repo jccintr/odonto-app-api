@@ -91,6 +91,10 @@ Banco e schema únicos. Toda tabela de dados de clínica tem `clinic_id` e **Row
 | GET | `/api/patients` | logado | Lista resumida (busca por nome, CPF ou telefone) |
 | GET | `/api/patients/:id` | logado | Ficha completa; **cada consulta é auditada** |
 | POST, PATCH | `/api/patients`, `/api/patients/:id` | logado | Cadastrar e alterar (arquivar com `active: false`; não há exclusão) |
+| GET | `/api/patients/:patientId/images[/:imageId]` | logado | Imagens e radiografias do paciente (link de download que expira; consulta auditada) |
+| POST | `/api/patients/:patientId/images/upload-signature` | admin, dentista | Passo 1: assinar o envio direto ao Cloudinary |
+| POST | `/api/patients/:patientId/images` | admin, dentista | Passo 2: registrar a imagem enviada (a API confere o arquivo no Cloudinary) |
+| PATCH, DELETE | `/api/patients/:patientId/images/:imageId` | admin, dentista | Alterar dados ou remover (apaga o arquivo; o registro fica como removido) |
 | GET, POST | `/api/appointments` | logado | Agenda (filtros por período, dentista, paciente e situação) e agendamento |
 | GET, PATCH | `/api/appointments/:id` | logado | Consultar e remarcar |
 | POST | `/api/appointments/:id/status` | logado | Confirmar, atender, faltar ou cancelar |
@@ -204,6 +208,24 @@ Só o administrador. Nada é guardado: cada consulta calcula direto das tabelas,
 - **Por dentista:** procedimentos, produção, comissão e atendimentos.
 - `GET /api/reports/trend` devolve a série dos últimos meses (1 a 12), com meses sem movimento zerados.
 
+## Imagens e radiografias (Cloudinary, plano gratuito)
+
+Usa **só recursos do plano gratuito**: envio assinado, arquivo `private`, consulta e remoção pela API, e link de download assinado. Não há transformações (miniaturas, redimensionamento), que gastam créditos.
+
+- **Fluxo em dois passos:** (1) `POST .../images/upload-signature` devolve `publicId`, `uploadUrl` e `fields` assinados; o app envia o arquivo **direto ao Cloudinary** (a API não recebe o arquivo);
+  (2) `POST .../images` registra a imagem na ficha. Nesse passo a API consulta o Cloudinary e guarda o formato, o tamanho e as dimensões **reais**,
+  recusa arquivo de outro paciente/clínica (o `publicId` precisa ser `pasta/clínica/paciente/uuid`, gerado pela API), arquivo não enviado e arquivo acima de `IMAGE_MAX_MB` (que é apagado).
+- **Privacidade:** os arquivos ficam como `private` (sem URL pública). A API entrega, só a quem tem acesso à ficha, um link de download **assinado que expira** (`IMAGE_URL_TTL_SECONDS`, padrão 10 min).
+  Esse link passa pela API do Cloudinary (não pelo CDN) e gasta banda: o app deve baixar a imagem só quando for exibi-la e reduzi-la no próprio aparelho.
+  Recomendado: no painel do Cloudinary, em *Settings → Security*, ative **Strict transformations** (gratuito), para ninguém conseguir gerar versões derivadas da imagem por URL.
+- **Limites do plano gratuito** (conferidos na documentação do Cloudinary): imagem de até **10 MB** e 25 megapixels (por isso `IMAGE_MAX_MB` vem com 10);
+  **25 créditos por mês** divididos entre armazenamento (1 GB = 1 crédito), banda (1 GB = 1 crédito) e transformações; entrega de **PDF vem bloqueada** em contas gratuitas,
+  então só são aceitos jpg, jpeg, png, webp e heic (laudos em papel entram como foto, tipo `document`). Radiografias ocupam espaço: acompanhe o uso no painel e, se a clínica crescer, avalie outro armazenamento.
+- **Quem pode:** admin, dentista e secretária consultam; só admin e dentista enviam, alteram e removem. Leituras e alterações vão para a auditoria.
+- **Remoção:** apaga o arquivo no Cloudinary e marca o registro como removido (quem e quando). Se o Cloudinary falhar, nada é alterado (502).
+- Tipos: `xray` (radiografia), `photo`, `document`, `other`.
+- Sem `CLOUDINARY_*` no `.env`, as rotas de imagem respondem 503 `STORAGE_NOT_CONFIGURED`. Os testes usam um armazenamento falso (nunca falam com o Cloudinary).
+
 ## Estrutura
 
 ```
@@ -213,7 +235,7 @@ src/
   config/            variáveis de ambiente e mensagens de validação (zod em português)
   db/                pool, withTenant, helper de RLS
   middlewares/       autenticação/perfis, validação, erros, limite de requisições
-  modules/           auth, clinic, users, dentists, procedures, patients, appointments, budgets, odontogram, payments, payouts, reports, platform (routes → service)
+  modules/           auth, clinic, users, dentists, procedures, patients, appointments, budgets, odontogram, payments, payouts, reports, images, platform (routes → service)
   services/          mailer (SMTP Hostinger), senha, tokens
   utils/             erros, DTOs, paginação, slug, limite de login
 templates/emails/    modelos HTML dos e-mails
@@ -222,5 +244,4 @@ tests/               suíte completa (globalSetup sobe o PostgreSQL de teste)
 
 ## Próximos módulos (ver roadmap da ficha técnica)
 
-Imagens e radiografias (Cloudinary) →
-avisos de consulta e orçamentos (e-mail e WhatsApp). Ainda faltam na agenda: bloqueio de horários e horário de funcionamento.
+Avisos de consulta e orçamentos (e-mail e WhatsApp). Ainda faltam na agenda: bloqueio de horários e horário de funcionamento.
