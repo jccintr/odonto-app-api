@@ -120,6 +120,12 @@ Banco e schema únicos. Toda tabela de dados de clínica tem `clinic_id` e **Row
 | GET, POST | `/api/payouts` | admin | Fechamentos pagos aos dentistas; pagar o saldo |
 | GET | `/api/payouts/:id` | admin | Fechamento com as linhas |
 | POST | `/api/payouts/:id/cancel` | admin | Desfazer um fechamento (o saldo volta) |
+| GET, PATCH | `/api/notifications/settings` | admin, secretária (consulta); admin (altera) | Lembrete ligado/desligado, horas de antecedência, telefone e endereço da clínica nos e-mails |
+| GET | `/api/notifications` | admin, secretária | Histórico de avisos enviados (filtros: paciente, tipo, situação) |
+| POST | `/api/notifications/appointments/:appointmentId/reminder` | admin, secretária | Lembrete da consulta por e-mail, agora |
+| POST | `/api/notifications/budgets/:budgetId/email` | admin, secretária | Orçamento por e-mail |
+| GET | `/api/notifications/{appointments/:appointmentId,budgets/:budgetId}/whatsapp` | admin, secretária | Link `wa.me` com a mensagem pronta (WhatsApp sem custo) |
+| POST | `/api/notifications/reminders/run` | admin | Roda agora os lembretes automáticos desta clínica |
 | GET | `/api/reports/monthly` | admin | Relatório gerencial do mês (`?month=AAAA-MM`): caixa, produção, agenda, orçamentos, pacientes novos, repasse, resultado e quadro por dentista |
 | GET | `/api/reports/trend` | admin | Evolução mês a mês (`?months=6`) para gráficos do painel |
 | POST | `/api/platform/login` | plataforma | Entrar como administrador da plataforma |
@@ -226,6 +232,18 @@ Usa **só recursos do plano gratuito**: envio assinado, arquivo `private`, consu
 - Tipos: `xray` (radiografia), `photo`, `document`, `other`.
 - Sem `CLOUDINARY_*` no `.env`, as rotas de imagem respondem 503 `STORAGE_NOT_CONFIGURED`. Os testes usam um armazenamento falso (nunca falam com o Cloudinary).
 
+## Avisos ao paciente (e-mail e WhatsApp)
+
+- **Quem recebe:** só paciente com e-mail (ou telefone, no WhatsApp) **e** que autorizou contato (`contactConsent`, LGPD). Sem isso a API responde 422 (`NO_EMAIL`, `NO_PHONE`, `NO_CONSENT`) e o lembrete automático pula o paciente.
+- **Lembrete de consulta:** o agendador automático envia, por e-mail, o lembrete dos atendimentos ativos que começam dentro da janela da clínica (padrão: nas próximas 24 h; configurável de 1 a 72 h em `PATCH /api/notifications/settings`).
+  Cada atendimento recebe **um** lembrete: o banco garante, e quem já recebeu o lembrete enviado à mão pela secretária não recebe outro.
+  Para ligar, defina `REMINDERS_SCHEDULER=true` (e, se quiser, `REMINDERS_INTERVAL_MINUTES`, padrão 15). Com vários servidores no ar, só um trabalha por vez (trava no banco).
+  O administrador também pode rodar na hora em `POST /api/notifications/reminders/run` (só a própria clínica).
+- **Falhas:** todo envio fica registrado em `GET /api/notifications` (`sent`, `failed` com o motivo). O automático tenta de novo nas rodadas seguintes, até 3 tentativas; um envio "pendente" parado há mais de 15 minutos (servidor caiu) é retomado.
+- **Orçamento por e-mail:** procedimentos vigentes (itens cancelados ficam de fora), desconto e total, em qualquer situação do orçamento.
+- **WhatsApp sem custo:** `.../whatsapp` devolve um link `wa.me` com a mensagem pronta; quem clica só confirma o envio no próprio WhatsApp. O envio automático por WhatsApp exige um provedor pago ou não oficial e **não foi ligado**: o histórico e a regra de consentimento já estão prontos para receber esse canal depois.
+- Datas e horas dos avisos saem no fuso da clínica (`TIMEZONE`). Em desenvolvimento, sem SMTP, o envio fica `failed` com "SMTP não configurado" (o texto aparece no console).
+
 ## Estrutura
 
 ```
@@ -235,7 +253,7 @@ src/
   config/            variáveis de ambiente e mensagens de validação (zod em português)
   db/                pool, withTenant, helper de RLS
   middlewares/       autenticação/perfis, validação, erros, limite de requisições
-  modules/           auth, clinic, users, dentists, procedures, patients, appointments, budgets, odontogram, payments, payouts, reports, images, platform (routes → service)
+  modules/           auth, clinic, users, dentists, procedures, patients, appointments, budgets, odontogram, payments, payouts, reports, images, notifications, platform (routes → service)
   services/          mailer (SMTP Hostinger), senha, tokens
   utils/             erros, DTOs, paginação, slug, limite de login
 templates/emails/    modelos HTML dos e-mails
@@ -244,4 +262,4 @@ tests/               suíte completa (globalSetup sobe o PostgreSQL de teste)
 
 ## Próximos módulos (ver roadmap da ficha técnica)
 
-Avisos de consulta e orçamentos (e-mail e WhatsApp). Ainda faltam na agenda: bloqueio de horários e horário de funcionamento.
+Envio automático por WhatsApp (depende de provedor). Ainda faltam na agenda: bloqueio de horários e horário de funcionamento. Depois da API: app web da secretária e app Expo do dentista.

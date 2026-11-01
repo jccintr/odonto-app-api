@@ -64,7 +64,7 @@ it('percorre o sistema inteiro e todas as rotas respondem como a documentação 
   await step('consultar procedimento', api().get(`/api/procedures/${procedure.id}`).set(admin), 200);
   await step('alterar procedimento', api().patch(`/api/procedures/${procedure.id}`).set(admin).send({ category: 'Dentística' }), 200);
   const patient = await step('cadastrar paciente', api().post('/api/patients').set(admin).send({
-    name: 'Ana Lima', cpf: '529.982.247-25', phone: '(35) 99999-0000', birthDate: '1990-05-17', contactConsent: true, anamnesis: { alergias: ['penicilina'] },
+    name: 'Ana Lima', cpf: '529.982.247-25', phone: '(35) 99999-0000', birthDate: '1990-05-17', email: 'ana@exemplo.test', contactConsent: true, anamnesis: { alergias: ['penicilina'] },
     address: { zip: '37530-000', city: 'Brazópolis', state: 'MG' },
   }), 201);
   await step('listar pacientes', api().get('/api/patients').set(admin), 200);
@@ -146,6 +146,17 @@ it('percorre o sistema inteiro e todas as rotas respondem como a documentação 
   await step('listar fechamentos', api().get('/api/payouts').set(admin), 200);
   await step('consultar fechamento', api().get(`/api/payouts/${payout.id}`).set(admin), 200);
   await step('desfazer fechamento', api().post(`/api/payouts/${payout.id}/cancel`).set(admin).send({ reason: 'Teste' }), 200);
+
+  // ---- avisos ao paciente ----
+  await step('config. avisos', api().get('/api/notifications/settings').set(admin), 200);
+  await step('alterar config. avisos', api().patch('/api/notifications/settings').set(admin).send({ reminderHoursBefore: 48, contactPhone: '(35) 3333-0000' }), 200);
+  const notice = await step('lembrete por e-mail', api().post(`/api/notifications/appointments/${appointment.id}/reminder`).set(admin).send({}), 201);
+  expect(notice.status).toBe('sent');
+  await step('lembrete por WhatsApp', api().get(`/api/notifications/appointments/${appointment.id}/whatsapp`).set(admin), 200);
+  await step('orçamento por e-mail', api().post(`/api/notifications/budgets/${budget.id}/email`).set(admin).send({}), 201);
+  await step('orçamento por WhatsApp', api().get(`/api/notifications/budgets/${budget.id}/whatsapp`).set(admin), 200);
+  await step('histórico de avisos', api().get('/api/notifications').set(admin), 200);
+  await step('rodar lembretes', api().post('/api/notifications/reminders/run').set(admin).send({}), 200);
 
   // ---- relatórios gerenciais ----
   const report = await step('relatório do mês', api().get('/api/reports/monthly').set(admin), 200);

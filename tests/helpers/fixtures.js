@@ -42,6 +42,13 @@ export async function buildClinic(label) {
     })
     .returning('*');
 
+  const [notification] = await db('notifications')
+    .insert({
+      clinic_id: clinic.id, patient_id: patient.id, kind: 'appointment_reminder', appointment_id: first.appointment.id, trigger: 'manual',
+      recipient: `SEGREDO-${label}@paciente.test`, subject: `SEGREDO-${label}-aviso`, status: 'sent', attempts: 1, sent_at: new Date(),
+    })
+    .returning('*');
+
   // repasse: uma regra (dentista 2 no procedimento) e um fechamento pago ao dentista 1, com o lançamento do procedimento dele
   const [rule] = await db('payout_rules').insert({ clinic_id: clinic.id, procedure_id: procedure.id, dentist_id: d2.dentist.id, type: 'fixed', fixed_cents: 1500 }).returning('*');
   const [entry] = await db('payout_entries')
@@ -57,7 +64,7 @@ export async function buildClinic(label) {
   await db('payout_lines').insert({ clinic_id: clinic.id, payout_id: payout.id, entry_id: entry.id, amount_cents: 1000 });
 
   return {
-    label, clinic, admin, rule, entry, payout, image, secretary, target, d1, d2, patient, procedure, record, ...first, second,
+    label, clinic, admin, rule, entry, payout, image, notification, secretary, target, d1, d2, patient, procedure, record, ...first, second,
     tokens: { admin: signAccessToken(admin), secretary: signAccessToken(secretary), dentist: signAccessToken(d1.user) },
   };
 }

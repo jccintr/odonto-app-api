@@ -205,3 +205,20 @@ export const toImageDto = (i, links) => ({
   createdAt: i.created_at,
   ...links,
 });
+
+export const toNotificationDto = (n) => ({
+  id: n.id,
+  kind: n.kind,
+  channel: n.channel,
+  trigger: n.trigger,
+  patient: { id: n.patient_id, name: n.patient_name },
+  appointmentId: n.appointment_id,
+  budgetId: n.budget_id,
+  recipient: n.recipient,
+  subject: n.subject,
+  status: n.status,
+  attempts: n.attempts,
+  lastError: n.last_error,
+  sentAt: n.sent_at,
+  createdAt: n.created_at,
+});

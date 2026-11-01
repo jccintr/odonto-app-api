@@ -271,6 +271,37 @@ export const DOCS = {
     errors: { 409: 'Fechamento já cancelado (`PAYOUT_ALREADY_CANCELED`).' },
   },
 
+  // ---------------- avisos ao paciente (administração e secretária) ----------------
+  'GET /api/notifications/settings': { summary: 'Configuração dos avisos', status: 200, response: ref('ConfigAvisos'), description: 'Padrão: lembrete ligado, 24 horas antes.' },
+  'PATCH /api/notifications/settings': { summary: 'Alterar a configuração dos avisos', status: 200, response: ref('ConfigAvisos'), description: 'Só o administrador. Telefone e endereço aparecem nos e-mails ao paciente.' },
+  'GET /api/notifications': {
+    summary: 'Avisos enviados', status: 200, response: page('Aviso'),
+    description: 'Registro de tudo que foi enviado (ou falhou), do mais recente para o mais antigo. Filtros: paciente, tipo e situação.',
+  },
+  'POST /api/notifications/reminders/run': {
+    summary: 'Enviar agora os lembretes desta clínica', status: 200, response: ref('ResumoLembretes'),
+    description: 'Faz o mesmo que o agendador automático (`REMINDERS_SCHEDULER=true`): envia o lembrete dos atendimentos dentro da janela configurada que ainda não receberam. Falhas são tentadas de novo (até 3 vezes). Só um processo trabalha por vez.',
+  },
+  'POST /api/notifications/appointments/:appointmentId/reminder': {
+    summary: 'Enviar o lembrete de uma consulta por e-mail', status: 201, response: ref('Aviso'),
+    description: 'Para atendimento futuro e ativo, de paciente com e-mail e que autorizou contato. **Se o e-mail falhar, a resposta é 201 com `status: failed` e o motivo em `lastError`** (o registro fica no histórico). O lembrete automático não repete quem já recebeu.',
+    errors: { 404: 'Atendimento não encontrado (ou de outra clínica).', 409: 'Atendimento passado ou cancelado (`APPOINTMENT_NOT_UPCOMING`).', 422: 'Paciente sem e-mail (`NO_EMAIL`) ou sem autorização de contato (`NO_CONSENT`).' },
+  },
+  'GET /api/notifications/appointments/:appointmentId/whatsapp': {
+    summary: 'Link de WhatsApp com o lembrete pronto', status: 200, response: ref('LinkWhatsapp'),
+    description: 'Gratuito: devolve um link `wa.me` com a mensagem pronta; quem clica só confirma o envio no próprio WhatsApp. Não fica registrado em avisos.',
+    errors: { 404: 'Atendimento não encontrado.', 409: 'Atendimento passado ou cancelado (`APPOINTMENT_NOT_UPCOMING`).', 422: 'Paciente sem telefone (`NO_PHONE`) ou sem autorização de contato (`NO_CONSENT`).' },
+  },
+  'POST /api/notifications/budgets/:budgetId/email': {
+    summary: 'Enviar o orçamento ao paciente por e-mail', status: 201, response: ref('Aviso'),
+    description: 'Com os procedimentos vigentes, desconto e total. Funciona em qualquer situação do orçamento. Se o e-mail falhar, a resposta é 201 com `status: failed`.',
+    errors: { 404: 'Orçamento não encontrado (ou de outra clínica).', 422: 'Sem procedimentos (`NO_ITEMS`), paciente sem e-mail (`NO_EMAIL`) ou sem autorização de contato (`NO_CONSENT`).' },
+  },
+  'GET /api/notifications/budgets/:budgetId/whatsapp': {
+    summary: 'Link de WhatsApp com o orçamento pronto', status: 200, response: ref('LinkWhatsapp'),
+    errors: { 404: 'Orçamento não encontrado.', 422: 'Sem procedimentos (`NO_ITEMS`), paciente sem telefone (`NO_PHONE`) ou sem autorização de contato (`NO_CONSENT`).' },
+  },
+
   // ---------------- relatórios gerenciais (só administração) ----------------
   'GET /api/reports/monthly': {
     summary: 'Relatório gerencial do mês', status: 200, response: ref('RelatorioMensal'),

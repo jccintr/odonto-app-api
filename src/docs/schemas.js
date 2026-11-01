@@ -1,6 +1,7 @@
 // Schemas de RESPOSTA da documentação (OpenAPI 3.1 / JSON Schema). Os de ENTRADA vêm direto dos schemas zod das rotas.
 // Todos fechados (additionalProperties: false, todos os campos obrigatórios): os testes validam respostas reais contra eles,
 // então qualquer campo novo ou removido nas respostas da API faz um teste falhar até a documentação ser atualizada.
+import { NOTIFICATION_KINDS, NOTIFICATION_STATUSES, NOTIFICATION_TRIGGERS } from '../utils/notifications.js';
 import { IMAGE_FORMATS, IMAGE_KINDS } from '../utils/images.js';
 import { PAYOUT_RELEASE_MODES, PAYOUT_RULE_SOURCES, PAYOUT_RULE_TYPES, PAYOUT_STATUSES } from '../utils/payouts.js';
 import { CONDITIONS } from '../utils/tooth.js';
@@ -248,6 +249,33 @@ export const SCHEMAS = {
     allowedFormats: { type: 'array', items: enumOf(IMAGE_FORMATS) },
     maxBytes: { type: 'integer', description: 'Tamanho máximo aceito no registro.' },
     validForSeconds: { type: 'integer', description: 'Por quanto tempo a assinatura vale.' },
+  }),
+
+  ConfigAvisos: obj({
+    remindersEnabled: { type: 'boolean', description: 'Liga o lembrete automático de consulta.' },
+    reminderHoursBefore: { type: 'integer', description: 'Com quantas horas de antecedência o lembrete é enviado (1 a 72).' },
+    contactPhone: { ...nstr, description: 'Telefone da clínica que aparece nos avisos.' },
+    contactAddress: { ...nstr, description: 'Endereço da clínica que aparece nos avisos.' },
+  }),
+  Aviso: obj({
+    id: uuid,
+    kind: enumOf(NOTIFICATION_KINDS, 'appointment_reminder = lembrete de consulta; budget = orçamento.'),
+    channel: enumOf(['email']),
+    trigger: enumOf(NOTIFICATION_TRIGGERS, 'auto = enviado pelo agendador; manual = enviado por alguém da equipe.'),
+    patient: obj({ id: uuid, name: str }), appointmentId: nuuid, budgetId: nuuid, recipient: str, subject: str,
+    status: enumOf(NOTIFICATION_STATUSES, 'pending = enviando; sent = enviado; failed = falhou (veja lastError).'),
+    attempts: int, lastError: nstr, sentAt: nDateTime, createdAt: dateTime,
+  }),
+  ResumoLembretes: obj({
+    alreadyRunning: { type: 'boolean', description: 'true = outra execução estava em andamento e esta não fez nada.' },
+    clinics: { type: 'integer' }, considered: { type: 'integer', description: 'Atendimentos dentro da janela do lembrete.' },
+    sent: int, failed: int,
+    skipped: obj({ noEmail: int, noConsent: int, alreadyHandled: int }),
+  }),
+  LinkWhatsapp: obj({
+    phone: { type: 'string', description: 'Telefone do paciente com DDI 55.' },
+    message: { type: 'string', description: 'Mensagem pronta.' },
+    url: { type: 'string', description: 'Link wa.me: abre o WhatsApp com a mensagem pronta; a pessoa só confirma o envio.' },
   }),
 
   MarcacaoDente: obj({

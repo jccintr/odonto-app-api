@@ -116,6 +116,28 @@ describe('main.start', () => {
     expect(server.listening).toBe(false);
   });
 
+  it('liga o agendador dos lembretes só com REMINDERS_SCHEDULER=true e o desliga junto com o servidor', async () => {
+    quiet();
+    const stopScheduler = vi.fn();
+    const startReminderScheduler = vi.fn(() => stopScheduler);
+    vi.doMock('../src/services/scheduler.js', () => ({ startReminderScheduler }));
+    vi.stubEnv('PORT', String(await freePort()));
+    vi.resetModules();
+    const { start } = await import('../src/main.js');
+
+    await (await start()).stop();
+    expect(startReminderScheduler).not.toHaveBeenCalled();
+
+    vi.stubEnv('REMINDERS_SCHEDULER', 'true');
+    vi.stubEnv('PORT', String(await freePort()));
+    vi.resetModules(); // o primeiro stop() encerrou o pool do banco: recarrega para subir de novo
+    const { stop } = await (await import('../src/main.js')).start();
+    expect(startReminderScheduler).toHaveBeenCalledTimes(1);
+    await stop();
+    expect(stopScheduler).toHaveBeenCalledTimes(1);
+    vi.doUnmock('../src/services/scheduler.js');
+  });
+
   it('avisa quando os dois segredos de JWT são iguais', async () => {
     const warn = quiet();
     vi.stubEnv('PORT', String(await freePort()));

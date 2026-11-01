@@ -4,6 +4,7 @@ import authRoutes from './modules/auth/auth.routes.js';
 import clinicRoutes from './modules/clinic/clinic.routes.js';
 import dentistsRoutes from './modules/dentists/dentists.routes.js';
 import imagesRoutes from './modules/images/images.routes.js';
+import notificationsRoutes from './modules/notifications/notifications.routes.js';
 import odontogramRoutes from './modules/odontogram/odontogram.routes.js';
 import patientsRoutes from './modules/patients/patients.routes.js';
 import budgetPaymentsRoutes from './modules/payments/budgetPayments.routes.js';
@@ -32,6 +33,7 @@ export const MOUNTS = [
   ['/budgets/:id', budgetPaymentsRoutes],
   ['/budgets', budgetsRoutes],
   ['/payments', paymentsRoutes],
+  ['/notifications', notificationsRoutes],
   ['/payouts', payoutsRoutes],
   ['/reports', reportsRoutes],
   ['/platform', platformRoutes],

@@ -17,6 +17,8 @@ vi.mock('../src/services/mailer.js', async (importOriginal) => ({
   ...(await importOriginal()),
   sendVerificationEmail: vi.fn(),
   sendPasswordResetEmail: vi.fn(),
+  sendAppointmentReminderEmail: vi.fn(),
+  sendBudgetEmail: vi.fn(),
 }));
 const mailer = await import('../src/services/mailer.js');
 
@@ -34,6 +36,8 @@ beforeEach(async () => {
   loginThrottle.clear();
   mailer.sendVerificationEmail.mockReset().mockResolvedValue({});
   mailer.sendPasswordResetEmail.mockReset().mockResolvedValue({});
+  mailer.sendAppointmentReminderEmail.mockReset().mockResolvedValue({});
+  mailer.sendBudgetEmail.mockReset().mockResolvedValue({});
 });
 
 afterAll(async () => {

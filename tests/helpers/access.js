@@ -8,6 +8,7 @@ export const ROLES = ANY;
 export const CLINICAL = ['admin', 'dentist'];
 export const FINANCE = ['admin', 'secretary'];
 export const ADMIN = ['admin'];
+export const STAFF = ['admin', 'secretary']; // administração e secretária
 
 export const ACCESS = {
   // ---- autenticação ----
@@ -95,6 +96,15 @@ export const ACCESS = {
   'POST /api/payouts': { access: ADMIN, body: (f) => ({ dentistId: f.d1.dentist.id, method: 'pix' }) },
   'GET /api/payouts/:id': { access: ADMIN, params: { id: 'payout' } },
   'POST /api/payouts/:id/cancel': { access: ADMIN, params: { id: 'payout' }, body: () => ({}) },
+  // ---- avisos ao paciente ----
+  'GET /api/notifications/settings': { access: STAFF, noRefs: true },
+  'PATCH /api/notifications/settings': { access: ADMIN, noRefs: true, body: () => ({ reminderHoursBefore: 12 }) },
+  'GET /api/notifications': { access: STAFF, noRefs: true },
+  'POST /api/notifications/reminders/run': { access: ADMIN, noRefs: true, body: () => ({}) },
+  'POST /api/notifications/appointments/:appointmentId/reminder': { access: STAFF, params: { appointmentId: 'appointment' }, body: () => ({}) },
+  'GET /api/notifications/appointments/:appointmentId/whatsapp': { access: STAFF, params: { appointmentId: 'appointment' } },
+  'POST /api/notifications/budgets/:budgetId/email': { access: STAFF, params: { budgetId: 'budget' }, body: () => ({}) },
+  'GET /api/notifications/budgets/:budgetId/whatsapp': { access: STAFF, params: { budgetId: 'budget' } },
   // ---- relatórios (só administração) ----
   'GET /api/reports/monthly': { access: ADMIN, noRefs: true },
   'GET /api/reports/trend': { access: ADMIN, noRefs: true },

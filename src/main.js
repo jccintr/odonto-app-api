@@ -1,6 +1,7 @@
 import app from './app.js';
 import { config } from './config/env.js';
 import db from './db/knex.js';
+import { startReminderScheduler } from './services/scheduler.js';
 
 /** Confere configuração e banco e sobe o servidor. Devolve { server, stop }. */
 export async function start() {
@@ -17,8 +18,11 @@ export async function start() {
   });
   console.log(`Servidor ouvindo a porta ${server.address().port}`);
 
+  const stopScheduler = config.remindersScheduler ? startReminderScheduler() : () => {};
+
   const stop = () =>
     new Promise((resolve) => {
+      stopScheduler();
       server.close(async () => {
         await db.destroy();
         resolve();

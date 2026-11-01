@@ -1,0 +1,18 @@
+<!doctype html>
+<html lang="pt-BR">
+<body style="margin:0;padding:24px;background:#f4f6f8;font-family:Arial,Helvetica,sans-serif;color:#1f2933">
+  <table role="presentation" width="100%" style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:8px;padding:32px">
+    <tr><td>
+      <h2 style="margin:0 0 16px;color:#0f766e">Seu orçamento</h2>
+      <p>Olá, {{NAME}}!</p>
+      <p>Segue o orçamento do seu tratamento com {{DENTIST}} na <strong>{{CLINIC}}</strong>:</p>
+      <table role="presentation" width="100%" style="border-collapse:collapse;margin:16px 0">
+        {{RAW_ROWS}}
+        {{RAW_DISCOUNT}}
+        <tr><td style="padding:10px 0;font-weight:bold">Total</td><td align="right" style="padding:10px 0;font-weight:bold;color:#0f766e">{{TOTAL}}</td></tr>
+      </table>
+      <p style="font-size:13px;color:#52606d">{{PHONE}}</p>
+    </td></tr>
+  </table>
+</body>
+</html>

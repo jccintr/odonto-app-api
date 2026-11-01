@@ -50,6 +50,10 @@ export const config = {
   get imageMaxMb() { return num('IMAGE_MAX_MB', 10); },
   get imageUrlTtlSeconds() { return num('IMAGE_URL_TTL_SECONDS', 600); },
 
+  // lembretes automáticos de consulta: o agendador roda dentro da API (REMINDERS_SCHEDULER=true), a cada N minutos
+  get remindersScheduler() { return process.env.REMINDERS_SCHEDULER === 'true'; },
+  get remindersIntervalMinutes() { return num('REMINDERS_INTERVAL_MINUTES', 15); },
+
   get smtpHost() { return process.env.SMTP_HOST; },
   get smtpUser() { return process.env.SMTP_USER; },
   get smtpPassword() { return process.env.SMTP_PASSWORD; },

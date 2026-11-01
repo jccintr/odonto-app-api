@@ -108,4 +108,62 @@ describe('modelos de e-mail', () => {
     expect(sent.html).toContain('https://app/redefinir-senha?token=T');
     expect(sent.text).toContain('60 minutos');
   });
+
+  it('lembrete de consulta: data, dentista e contato da clínica; dados do paciente são escapados no HTML', async () => {
+    configure();
+    await mailer.sendAppointmentReminderEmail({
+      to: 'ana@x.com', patientName: 'Ana <b>Lima</b>', clinicName: 'Clínica Sorriso', dentistName: 'Dr. Paulo',
+      when: 'sexta-feira, 06/11/2026 às 14:30', address: 'Rua A, 10', phone: '(35) 3333-0000',
+    });
+    const sent = sendMail.mock.calls[0][0];
+    expect(sent).toMatchObject({ to: 'ana@x.com', subject: 'Lembrete da sua consulta — Clínica Sorriso' });
+    expect(sent.html).toContain('Ana &lt;b&gt;Lima&lt;/b&gt;');
+    expect(sent.html).not.toContain('<b>Lima');
+    expect(sent.html).toContain('sexta-feira, 06/11/2026 às 14:30');
+    expect(sent.html).toContain('Endereço: Rua A, 10');
+    expect(sent.text).toContain('Telefone: (35) 3333-0000');
+  });
+
+  it('lembrete de consulta sem endereço e telefone da clínica não inventa linhas de contato', async () => {
+    configure();
+    await mailer.sendAppointmentReminderEmail({ to: 'ana@x.com', patientName: 'Ana', clinicName: 'C', dentistName: 'D', when: 'amanhã', address: null, phone: null });
+    const sent = sendMail.mock.calls[0][0];
+    expect(sent.html).not.toContain('Endereço');
+    expect(sent.text).not.toContain('Telefone');
+    expect(sent.text).toContain('amanhã');
+  });
+
+  it('orçamento: itens com dente e faces, desconto só quando existe, total e telefone da clínica', async () => {
+    configure();
+    const base = { to: 'ana@x.com', patientName: 'Ana', clinicName: 'Clínica', dentistName: 'Dr. Paulo', subtotalCents: 45000, totalCents: 40000 };
+    await mailer.sendBudgetEmail({
+      ...base, discountCents: 5000, phone: '(35) 3333-0000',
+      items: [{ name: 'Restauração <x>', tooth: 16, faces: 'DO', priceCents: 20000 }, { name: 'Limpeza', tooth: null, faces: null, priceCents: 25000 }],
+    });
+    const sent = sendMail.mock.calls[0][0];
+    expect(sent.subject).toBe('Seu orçamento — Clínica');
+    expect(sent.html).toContain('Restauração &lt;x&gt; — dente 16 (DO)');
+    expect(sent.html).toContain('R$ 200,00');
+    expect(sent.html).toContain('Desconto');
+    expect(sent.html).toContain('R$ 400,00');
+    expect(sent.html).toContain('Ligue para (35) 3333-0000');
+    expect(sent.text.split('\n')).toEqual([
+      'Olá, Ana! Segue o orçamento do tratamento com Dr. Paulo (Clínica):',
+      '- Restauração <x> — dente 16 (DO): R$ 200,00', '- Limpeza: R$ 250,00', 'Desconto: -R$ 50,00', 'Total: R$ 400,00', 'Dúvidas? Ligue para (35) 3333-0000.',
+    ]);
+
+    sendMail.mockClear();
+    await mailer.sendBudgetEmail({ ...base, discountCents: 0, phone: null, items: [{ name: 'Limpeza', tooth: 11, faces: null, priceCents: 45000 }] });
+    const plain = sendMail.mock.calls[0][0];
+    expect(plain.html).not.toContain('Desconto');
+    expect(plain.text).not.toContain('Desconto');
+    expect(plain.text).toContain('Limpeza — dente 11: R$ 450,00');
+    expect(plain.text).toContain('Dúvidas? Fale com a clínica.');
+  });
+
+  it('variáveis RAW_ entram sem escape; as demais sempre com escape', () => {
+    const html = mailer.renderTemplate('budget', { NAME: '<i>x</i>', CLINIC: 'C', DENTIST: 'D', TOTAL: 'T', RAW_ROWS: '<tr data-raw></tr>', RAW_DISCOUNT: '', PHONE: 'P' });
+    expect(html).toContain('<tr data-raw></tr>');
+    expect(html).toContain('&lt;i&gt;x&lt;/i&gt;');
+  });
 });
