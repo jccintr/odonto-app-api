@@ -1,8 +1,8 @@
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import db from '../src/db/knex.js';
 import { api, bearer, createClinic, createDentist, createPatient, loginAs, setupUser } from './helpers/factories.js';
 
-const T = (h, m = 0) => `2026-11-03T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00.000Z`;
+const T = (h, m = 0) => `2099-11-03T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00.000Z`;
 const book = (headers, body) => api().post('/api/appointments').set(headers).send(body);
 const slot = (c, h1, h2, extra = {}) => ({ patientId: c.patient.id, dentistId: c.dentist.dentist.id, startsAt: T(h1), endsAt: T(h2), ...extra });
 const dentistHeaders = async (user) => bearer((await loginAs(user)).accessToken);
@@ -78,11 +78,11 @@ describe('POST /api/appointments', () => {
   it('valida o corpo (400): término antes ou igual ao início, datas e ids inválidos', async () => {
     const c = await setup();
     const bad = [
-      slot(c, 10, 9), slot(c, 9, 9), { ...slot(c, 9, 10), startsAt: '03/11/2026 09:00' }, { ...slot(c, 9, 10), startsAt: '2026-11-03T09:00:00' },
+      slot(c, 10, 9), slot(c, 9, 9), { ...slot(c, 9, 10), startsAt: '03/11/2026 09:00' }, { ...slot(c, 9, 10), startsAt: '2099-11-03T09:00:00' },
       { ...slot(c, 9, 10), patientId: 'abc' }, { ...slot(c, 9, 10), patientId: undefined }, slot(c, 9, 10, { notes: 'x'.repeat(2001) }),
     ];
     for (const body of bad) expect((await book(c.headers, body)).status, JSON.stringify(body)).toBe(400);
-    expect((await book(c.headers, { ...slot(c, 9, 10), startsAt: '2026-11-03T06:00:00-03:00' })).status).toBe(201); // fuso é aceito
+    expect((await book(c.headers, { ...slot(c, 9, 10), startsAt: '2099-11-03T06:00:00-03:00' })).status).toBe(201); // fuso é aceito
   });
 
   it('horário sobreposto do mesmo dentista: 409 SLOT_TAKEN; encostar (fim = início) pode', async () => {
@@ -180,7 +180,7 @@ describe('GET /api/appointments', () => {
 
   it('valida a consulta (400) e exige login (401)', async () => {
     const c = await seed();
-    for (const qs of ['from=ontem', 'to=2026-11-03', 'perPage=201', 'status=x', 'dentistId=abc', 'patientId=abc', 'page=0']) {
+    for (const qs of ['from=ontem', 'to=2099-11-03', 'perPage=201', 'status=x', 'dentistId=abc', 'patientId=abc', 'page=0']) {
       expect((await api().get(`/api/appointments?${qs}`).set(c.headers)).status, qs).toBe(400);
     }
     expect((await api().get('/api/appointments')).status).toBe(401);
@@ -364,5 +364,46 @@ describe('POST /api/appointments/:id/status', () => {
     }
     expect((await status(c.headers, foreignAppt.id, { status: 'confirmed' })).status).toBe(404);
     expect((await status(c.headers, 'abc', { status: 'confirmed' })).status).toBe(400);
+  });
+});
+
+describe('datas passadas', () => {
+  const at = (ms) => new Date(Date.now() + ms).toISOString();
+  const MIN = 60_000;
+
+  it('não agenda em data e hora que já passaram (400 PAST_DATE), mas tolera um encaixe de poucos minutos atrás', async () => {
+    const c = await setup();
+    const past = await book(c.headers, { ...slot(c, 9, 10), startsAt: at(-2 * 24 * 60 * MIN), endsAt: at(-2 * 24 * 60 * MIN + 60 * MIN) });
+    expect(past.status).toBe(400);
+    expect(past.body.code).toBe('PAST_DATE');
+    const justPast = await book(c.headers, { ...slot(c, 9, 10), startsAt: at(-10 * MIN), endsAt: at(50 * MIN) });
+    expect(justPast.status).toBe(400);
+    expect(await db('appointments')).toHaveLength(0);
+
+    const walkIn = await book(c.headers, { ...slot(c, 9, 10), startsAt: at(-2 * MIN), endsAt: at(58 * MIN) });
+    expect(walkIn.status).toBe(201);
+  });
+
+  it('vale para a secretária e o dentista também', async () => {
+    const c = await setup();
+    const secretary = await setupUser({ role: 'secretary', clinic: c.clinic });
+    const body = { ...slot(c, 9, 10), startsAt: at(-3 * 60 * MIN), endsAt: at(-2 * 60 * MIN) };
+    expect((await book(secretary.headers, body)).status).toBe(400);
+    expect((await book(await dentistHeaders(c.dentist.user), body)).status).toBe(400);
+  });
+
+  it('remarcar para o passado: 400; editar só observações de um atendimento antigo continua valendo', async () => {
+    const c = await setup();
+    const row = await db('appointments').insert({
+      clinic_id: c.clinic.id, patient_id: c.patient.id, dentist_id: c.dentist.dentist.id, starts_at: at(-3 * 24 * 60 * MIN), ends_at: at(-3 * 24 * 60 * MIN + 60 * MIN),
+    }).returning('*');
+    const id = row[0].id;
+    expect((await api().patch(`/api/appointments/${id}`).set(c.headers).send({ notes: 'Paciente chegou atrasado' })).status).toBe(200);
+    const moved = await api().patch(`/api/appointments/${id}`).set(c.headers).send({ startsAt: at(-24 * 60 * MIN) });
+    expect(moved.status).toBe(400);
+    expect(moved.body.code).toBe('PAST_DATE');
+    // reenviar o mesmo horário (o formulário de remarcação faz isso) não conta como remarcar
+    expect((await api().patch(`/api/appointments/${id}`).set(c.headers).send({ startsAt: row[0].starts_at.toISOString() })).status).toBe(200);
+    expect((await api().patch(`/api/appointments/${id}`).set(c.headers).send({ startsAt: T(9), endsAt: T(10) })).status).toBe(200);
   });
 });

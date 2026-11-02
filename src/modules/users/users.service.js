@@ -3,6 +3,7 @@ import { conflict, HttpError, notFound } from '../../utils/errors.js';
 import { toUserDto } from '../../utils/dto.js';
 import { escapeLike, pageResult, paginate } from '../../utils/pagination.js';
 import { hashPassword } from '../../services/password.js';
+import { assertDentistSlot } from '../billing/limits.js';
 import { revokeAllUserTokens, sendVerificationSafely } from '../auth/auth.service.js';
 
 const filtered = (trx, { role, active, q }) =>
@@ -32,8 +33,10 @@ export async function createUser(clinicId, { name, email, password, role }) {
   const passwordHash = await hashPassword(password);
   let user;
   try {
-    [user] = await withTenant(clinicId, (trx) =>
-      trx('users').insert({ clinic_id: clinicId, name, email, password_hash: passwordHash, role }).returning('*'));
+    [user] = await withTenant(clinicId, async (trx) => {
+      if (role === 'dentist') await assertDentistSlot(trx);
+      return trx('users').insert({ clinic_id: clinicId, name, email, password_hash: passwordHash, role }).returning('*');
+    });
   } catch (err) {
     if (err.code === '23505') throw conflict('E-mail já cadastrado.');
     throw err;
@@ -48,6 +51,12 @@ export function updateUser(clinicId, actorId, id, changes) {
     throw new HttpError(422, 'Você não pode desativar nem alterar o próprio perfil.');
   }
   return withTenant(clinicId, async (trx) => {
+    // virar dentista ativo (criar, reativar ou mudar de perfil) respeita o limite de dentistas do plano
+    const current = await trx('users').where({ id }).first('role', 'active');
+    if (current) {
+      const next = { role: changes.role ?? current.role, active: changes.active ?? current.active };
+      if (next.role === 'dentist' && next.active && !(current.role === 'dentist' && current.active)) await assertDentistSlot(trx);
+    }
     const [user] = await trx('users').where({ id }).update({ ...changes, updated_at: new Date() }).returning('*');
     if (!user) throw notFound('Usuário');
     if (changes.active === false) await revokeAllUserTokens(id, trx);

@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { addMonths, businessDate, splitAmount } from '../src/utils/dates.js';
+import { addDays, addMonths, businessDate, daysBetween, splitAmount } from '../src/utils/dates.js';
 
 afterEach(() => vi.unstubAllEnvs());
 
@@ -42,5 +42,22 @@ describe('splitAmount', () => {
       expect(split.reduce((a, b) => a + b, 0)).toBe(total);
       expect(split).toHaveLength(parts);
     }
+  });
+});
+
+describe('addDays e daysBetween', () => {
+  it.each([
+    ['2026-11-30', 1, '2026-12-01'], ['2026-12-31', 1, '2027-01-01'], ['2026-03-01', -1, '2026-02-28'], ['2028-03-01', -1, '2028-02-29'],
+    ['2026-11-15', 0, '2026-11-15'], ['2026-01-01', 365, '2027-01-01'],
+  ])('%s + %i dia(s) = %s', (date, days, expected) => {
+    expect(addDays(date, days)).toBe(expected);
+  });
+
+  it('daysBetween conta dias de calendário, com sinal e sem depender de horário de verão', () => {
+    expect(daysBetween('2026-11-01', '2026-11-15')).toBe(14);
+    expect(daysBetween('2026-11-15', '2026-11-01')).toBe(-14);
+    expect(daysBetween('2026-11-15', '2026-11-15')).toBe(0);
+    expect(daysBetween('2026-02-28', '2026-03-01')).toBe(1);
+    expect(daysBetween('2026-10-01', '2026-11-01')).toBe(31);
   });
 });

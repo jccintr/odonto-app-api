@@ -3,6 +3,8 @@
 // os outros saem sem fazer nada. O banco ainda garante um único lembrete automático por atendimento.
 import db from '../../db/knex.js';
 import { withTenant } from '../../db/tenant.js';
+import { businessDate } from '../../utils/dates.js';
+import { computeAccess } from '../billing/access.js';
 import { MAX_ATTEMPTS, STALE_PENDING_MINUTES } from '../../utils/notifications.js';
 import { deliverReminder, loadClinicName } from './notifications.send.js';
 import { loadSettings } from './notifications.settings.js';
@@ -64,12 +66,15 @@ export function runReminders({ clinicId, now = new Date() } = {}) {
     const [{ locked }] = (await lock.raw('SELECT pg_try_advisory_xact_lock(?) AS locked', [LOCK_KEY])).rows;
     if (!locked) return { alreadyRunning: true };
 
-    const clinics = await lock('clinics')
+    const candidates = await lock('clinics')
+      .join('subscriptions', 'subscriptions.clinic_id', 'clinics.id')
       .leftJoin('notification_settings', 'notification_settings.clinic_id', 'clinics.id')
       .where('clinics.status', 'active')
       .whereRaw('coalesce(notification_settings.reminders_enabled, true)')
       .modify((q) => { if (clinicId) q.where('clinics.id', clinicId); })
-      .select('clinics.id');
+      .select('clinics.id', 'subscriptions.trial_ends_on', 'subscriptions.paid_until', 'subscriptions.courtesy_until', 'subscriptions.courtesy_indefinite');
+    // clínica com a assinatura suspensa não dispara avisos aos pacientes
+    const clinics = candidates.filter((clinic) => !computeAccess(clinic, businessDate(now)).blocked);
 
     const summary = { alreadyRunning: false, clinics: clinics.length, considered: 0, sent: 0, failed: 0, skipped: { noEmail: 0, noConsent: 0, alreadyHandled: 0 } };
     for (const clinic of clinics) await withTenant(clinic.id, (trx) => processClinic(trx, now, summary));

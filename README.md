@@ -18,6 +18,11 @@ npm run dev                 # http://localhost:3000
 O administrador da plataforma (você) cadastra as clínicas em `POST /api/platform/clinics`; cada clínica nasce com o
 primeiro administrador, que cadastra os demais usuários (secretária, dentistas).
 
+## Demonstração (sem banco para instalar)
+
+`npm run demo` sobe a API com um PostgreSQL **embutido** e dados de exemplo (clínica, administradora, secretária, dois dentistas, procedimentos e pacientes),
+imprime a URL e os logins, e apaga tudo ao encerrar (Ctrl+C). Serve para experimentar o app web (`../web`) e é o que os testes de ponta a ponta do app web usam.
+
 ## Testes
 
 ```bash
@@ -244,6 +249,32 @@ Usa **só recursos do plano gratuito**: envio assinado, arquivo `private`, consu
 - **WhatsApp sem custo:** `.../whatsapp` devolve um link `wa.me` com a mensagem pronta; quem clica só confirma o envio no próprio WhatsApp. O envio automático por WhatsApp exige um provedor pago ou não oficial e **não foi ligado**: o histórico e a regra de consentimento já estão prontos para receber esse canal depois.
 - Datas e horas dos avisos saem no fuso da clínica (`TIMEZONE`). Em desenvolvimento, sem SMTP, o envio fica `failed` com "SMTP não configurado" (o texto aparece no console).
 
+## Cadastro público, teste grátis e assinatura
+
+Qualquer clínica se cadastra sozinha (`POST /api/signup`), escolhendo um **modelo** (`general` = Clínica geral, `orthodontics` = Ortodontia, `empty` = vazia). O cadastro cria a clínica, o primeiro administrador (que precisa confirmar o e-mail), os procedimentos do modelo e o **aceite dos Termos de Uso e da Política de Privacidade** (versão, data, IP e navegador, tabela `terms_acceptances`). Os preços dos modelos são **exemplos**: o painel lembra a clínica de conferi-los (`GET /api/clinic/onboarding`).
+
+**Teste grátis e cobrança (igual ao Delivroo, sem gateway):**
+
+| Situação | Quando | O que acontece |
+| --- | --- | --- |
+| `trial` | 14 dias após o cadastro (`TRIAL_DAYS`) | tudo liberado, sem cartão |
+| `active` / `courtesy` | plano pago em dia / cortesia da plataforma | tudo liberado |
+| `past_due` | até 7 dias depois do vencimento (`BILLING_GRACE_DAYS`) | segue funcionando, com aviso |
+| `suspended` | passou da carência | painel responde **402** `SUBSCRIPTION_SUSPENDED`; só login, assinatura, exportação de dados e `GET /api/clinic` funcionam; lembretes aos pacientes param |
+| `canceled` | 30 dias depois de suspensa (`BILLING_CANCEL_AFTER_DAYS`) | igual a suspensa, sinalizando que a conta será encerrada |
+
+A situação é **calculada das datas** a cada requisição (nada de cron). Planos iniciais (migration): Essencial R$ 79 (1 dentista), Clínica R$ 149 (até 4), Premium R$ 249 (ilimitado); o dono altera preços em `PATCH /api/platform/plans/:id`.
+
+**Fluxo do Pix:** a clínica escolhe o plano (`POST /api/billing/plan`) → a fatura mostra a **sua chave Pix** e o "copia e cola" com o valor (`BILLING_PIX_*` no `.env`) → ela paga e clica **Já paguei** → você recebe o aviso (`OWNER_EMAIL`), confere o Pix e confirma em `POST /api/platform/clinics/:id/invoices/:invoiceId/pay`, que libera mais 1 mês (o período emenda no anterior; se já venceu, começa hoje). A fila para conferir é `GET /api/platform/invoices?reported=true`. Também há `trial/extend` (estender teste) e `courtesy` (uso grátis) por clínica.
+
+> Se sua chave Pix for um CPF que também parece telefone (ex.: 11 dígitos começando com DDD válido e 9), defina `BILLING_PIX_KEY_TYPE=CPF`; sem isso a fatura sai sem o "copia e cola" (`reason: PIX_KEY_AMBIGUOUS`).
+
+**Freios contra abuso:** limite de cadastros por IP (`RATE_LIMIT_SIGNUP_MAX`), e-mails temporários recusados (`SIGNUP_BLOCKED_DOMAINS` acrescenta domínios), captcha Cloudflare Turnstile opcional (`TURNSTILE_SECRET` + `captchaToken` no cadastro) e `SIGNUP_ENABLED=false` para fechar o cadastro.
+
+**LGPD:** `GET /api/account/export` (todos os dados da clínica, sem senhas/tokens; funciona mesmo suspensa) e `POST /api/account/deletion-request` (pede exclusão; você apaga manualmente, guardando só o que a lei exigir). Os textos legais (`GET /api/legal/terms|privacy`) são **modelos escritos sem advogado**: revise com um profissional antes de divulgar. Mudou o texto? Troque `LEGAL_VERSION` em `src/modules/legal/documents.js`.
+
+Limite de dentistas por plano: criar, reativar ou promover alguém a dentista além do limite responde 422 `PLAN_LIMIT` (no teste não há limite).
+
 ## Estrutura
 
 ```
@@ -253,7 +284,7 @@ src/
   config/            variáveis de ambiente e mensagens de validação (zod em português)
   db/                pool, withTenant, helper de RLS
   middlewares/       autenticação/perfis, validação, erros, limite de requisições
-  modules/           auth, clinic, users, dentists, procedures, patients, appointments, budgets, odontogram, payments, payouts, reports, images, notifications, platform (routes → service)
+  modules/           auth, clinic, users, dentists, procedures, patients, appointments, budgets, odontogram, payments, payouts, reports, images, notifications, signup, legal, billing, account, platform (routes → service)
   services/          mailer (SMTP Hostinger), senha, tokens
   utils/             erros, DTOs, paginação, slug, limite de login
 templates/emails/    modelos HTML dos e-mails

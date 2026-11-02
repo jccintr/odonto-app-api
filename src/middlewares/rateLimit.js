@@ -5,6 +5,7 @@ import rateLimit, { MemoryStore, ipKeyGenerator, MINUTE, HOUR } from 'express-ra
 //   RATE_LIMIT_ENABLED=false     desliga tudo (nos testes já vem desligado)
 //   RATE_LIMIT_GLOBAL_MAX=1000   qualquer rota, por IP, a cada 15 min
 //   RATE_LIMIT_LOGIN_MAX=10      logins que FALHAM, por IP, a cada 15 min (login certo não conta)
+//   RATE_LIMIT_SIGNUP_MAX=5      cadastros de clínica, por IP, por hora
 //   RATE_LIMIT_PASSWORD_MAX=10   pedidos de e-mail (esqueci a senha, reenvio de verificação), por IP, por hora
 // Atrás de proxy (ex.: Railway), o IP real vem de X-Forwarded-For: veja TRUST_PROXY em trustProxySetting().
 
@@ -61,6 +62,11 @@ export const limiters = {
   login: createLimiter({
     windowMs: 15 * MINUTE, max: 'RATE_LIMIT_LOGIN_MAX', defaultMax: 10, skipSuccessfulRequests: true,
     message: 'Muitas tentativas de login. Tente novamente mais tarde.',
+  }),
+  // cadastros de clínica por IP (freio contra cadastro em massa)
+  signup: createLimiter({
+    windowMs: HOUR, max: 'RATE_LIMIT_SIGNUP_MAX', defaultMax: 5,
+    message: 'Muitos cadastros deste endereço. Tente novamente mais tarde.',
   }),
   password: createLimiter({
     windowMs: HOUR, max: 'RATE_LIMIT_PASSWORD_MAX', defaultMax: 10,

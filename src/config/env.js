@@ -54,6 +54,28 @@ export const config = {
   get remindersScheduler() { return process.env.REMINDERS_SCHEDULER === 'true'; },
   get remindersIntervalMinutes() { return num('REMINDERS_INTERVAL_MINUTES', 15); },
 
+  // assinatura da plataforma (cobrança manual por Pix, igual ao Delivroo): teste grátis, carência e suspensão. Tudo calculado por data, sem cron.
+  get trialDays() { return num('TRIAL_DAYS', 14); },
+  get graceDays() { return num('BILLING_GRACE_DAYS', 7); }, // depois do vencimento: segue usando, com aviso (past_due)
+  get cancelAfterDays() { return num('BILLING_CANCEL_AFTER_DAYS', 30); }, // depois da carência: suspensa; passado isto, cancelada
+  get invoiceLeadDays() { return num('INVOICE_LEAD_DAYS', 7); }, // a fatura do próximo mês nasce N dias antes de acabar o período
+  get billingPixKey() { return process.env.BILLING_PIX_KEY || ''; },
+  get billingPixKeyType() { return process.env.BILLING_PIX_KEY_TYPE || null; }, // CPF | CNPJ | PHONE | EMAIL | RANDOM (opcional)
+  get billingPixBeneficiary() { return str('BILLING_PIX_BENEFICIARY', 'OdontoApp'); },
+  get billingPixCity() { return str('BILLING_PIX_CITY', 'Brazopolis'); },
+  get billingPixInstructions() { return process.env.BILLING_PIX_INSTRUCTIONS || ''; },
+  // e-mail do dono da plataforma: recebe aviso de clínica nova, "já paguei" e pedido de exclusão. Sem ele, os avisos só vão para o log.
+  get ownerEmail() { return process.env.OWNER_EMAIL || ''; },
+
+  // identificação nos Termos de Uso e na Política de Privacidade
+  get legalOperatorName() { return str('LEGAL_OPERATOR_NAME', 'OdontoApp'); }, // quem opera a plataforma (nome ou razão social, com CPF/CNPJ se quiser)
+  get legalContactEmail() { return process.env.LEGAL_CONTACT_EMAIL || process.env.OWNER_EMAIL || ''; },
+
+  // cadastro público de clínicas
+  get signupEnabled() { return process.env.SIGNUP_ENABLED !== 'false'; },
+  get signupBlockedDomains() { return (process.env.SIGNUP_BLOCKED_DOMAINS || '').split(',').map((s) => s.trim().toLowerCase()).filter(Boolean); },
+  get turnstileSecret() { return process.env.TURNSTILE_SECRET || ''; }, // Cloudflare Turnstile (opcional); sem a chave, o captcha fica desligado
+
   get smtpHost() { return process.env.SMTP_HOST; },
   get smtpUser() { return process.env.SMTP_USER; },
   get smtpPassword() { return process.env.SMTP_PASSWORD; },

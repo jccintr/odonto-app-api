@@ -1,5 +1,7 @@
 import db from '../db/knex.js';
-import { emailNotVerified, forbidden, unauthorized } from '../utils/errors.js';
+import { HttpError, emailNotVerified, forbidden, unauthorized } from '../utils/errors.js';
+import { businessDate } from '../utils/dates.js';
+import { computeAccess, isOpenWhenSuspended } from '../modules/billing/access.js';
 import { issuedBeforePasswordChange } from '../utils/session.js';
 import { verifyAccessToken, verifyPlatformToken } from '../services/tokens.js';
 
@@ -22,8 +24,9 @@ export const authenticate = async (req, res, next) => {
   const payload = decode(verifyAccessToken, bearerToken(req));
   const user = await db('users')
     .join('clinics', 'clinics.id', 'users.clinic_id')
+    .join('subscriptions', 'subscriptions.clinic_id', 'users.clinic_id')
     .where('users.id', payload.sub)
-    .first('users.*', 'clinics.status as clinic_status');
+    .first('users.*', 'clinics.status as clinic_status', 'subscriptions.trial_ends_on', 'subscriptions.paid_until', 'subscriptions.courtesy_until', 'subscriptions.courtesy_indefinite');
 
   if (!user || !user.active) throw unauthorized();
   if (issuedBeforePasswordChange(user.password_changed_at, payload.iat)) throw unauthorized();
@@ -31,7 +34,13 @@ export const authenticate = async (req, res, next) => {
 
   if (!user.email_verified_at) throw emailNotVerified();
 
-  req.auth = { userId: user.id, clinicId: user.clinic_id, role: user.role, user };
+  // assinatura suspensa: o painel fica restrito à tela de assinatura e à exportação dos dados (a conta continua sendo da clínica)
+  const billing = computeAccess(user, businessDate());
+  if (billing.blocked && !isOpenWhenSuspended(req.method, req.originalUrl.split('?')[0])) {
+    throw new HttpError(402, 'Assinatura suspensa. Regularize o pagamento na tela Assinatura para voltar a usar o sistema.', { code: 'SUBSCRIPTION_SUSPENDED' });
+  }
+
+  req.auth = { userId: user.id, clinicId: user.clinic_id, role: user.role, user, billing };
   next();
 };
 

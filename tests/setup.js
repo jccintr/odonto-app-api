@@ -1,6 +1,7 @@
 import { afterAll, beforeEach, inject, vi } from 'vitest';
 import { loginThrottle } from '../src/utils/loginThrottle.js';
 import { resetRateLimits } from '../src/middlewares/rateLimit.js';
+import { DEFAULT_PLANS } from './helpers/plans.js';
 
 // o banco vem do globalSetup; precisa estar no ambiente antes de qualquer módulo da aplicação carregar
 process.env.DATABASE_URL = inject('databaseUrl');
@@ -19,6 +20,7 @@ vi.mock('../src/services/mailer.js', async (importOriginal) => ({
   sendPasswordResetEmail: vi.fn(),
   sendAppointmentReminderEmail: vi.fn(),
   sendBudgetEmail: vi.fn(),
+  sendOwnerNotice: vi.fn(),
 }));
 const mailer = await import('../src/services/mailer.js');
 
@@ -31,6 +33,7 @@ beforeEach(async () => {
   tables ??= (await db.raw("SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename NOT LIKE 'knex_%'")).rows
     .map((r) => `"${r.tablename}"`).join(', ');
   await db.raw(`TRUNCATE ${tables} RESTART IDENTITY CASCADE`);
+  await db('plans').insert(DEFAULT_PLANS); // os planos são dados de referência: voltam ao padrão antes de cada teste
   resetRateLimits();
   storage.reset();
   loginThrottle.clear();
@@ -38,6 +41,7 @@ beforeEach(async () => {
   mailer.sendPasswordResetEmail.mockReset().mockResolvedValue({});
   mailer.sendAppointmentReminderEmail.mockReset().mockResolvedValue({});
   mailer.sendBudgetEmail.mockReset().mockResolvedValue({});
+  mailer.sendOwnerNotice.mockReset().mockResolvedValue({});
 });
 
 afterAll(async () => {

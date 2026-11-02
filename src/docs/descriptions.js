@@ -8,6 +8,64 @@ const E503_STORAGE = 'Armazenamento de imagens não configurado (`STORAGE_NOT_CO
 const E404_REF = 'Paciente, dentista ou procedimento não encontrado (ou de outra clínica).';
 
 export const DOCS = {
+  // ---------------- cadastro público e textos legais ----------------
+  'GET /api/signup/options': {
+    summary: 'Opções do cadastro', status: 200, response: ref('OpcoesCadastro'),
+    description: 'Para montar a tela de cadastro: modelos de clínica, planos e preços, dias de teste, versão dos termos e se o captcha é exigido.',
+  },
+  'POST /api/signup': {
+    summary: 'Cadastrar uma clínica', status: 201, response: ref('Cadastro'),
+    description: 'Autoatendimento: cria a clínica, o primeiro administrador e o **teste grátis** (`trialDays` dias, sem cartão), já com os procedimentos do `template` escolhido (`general`, `orthodontics` ou `empty`). Registra o aceite dos Termos de Uso e da Política de Privacidade (versão, data, IP e navegador). O administrador recebe o e-mail de verificação e só entra depois de confirmar. Limite de cadastros por IP; e-mails temporários são recusados.',
+    errors: {
+      400: 'Dados inválidos, e-mail temporário (`EMAIL_NOT_ALLOWED`), ou captcha ausente/reprovado (`CAPTCHA_REQUIRED`, `CAPTCHA_FAILED`).',
+      403: 'Cadastro público desativado (`SIGNUP_DISABLED`).',
+      409: 'E-mail já cadastrado.',
+    },
+  },
+  'GET /api/legal/:type': {
+    summary: 'Termos de Uso e Política de Privacidade', status: 200, response: ref('DocumentoLegal'),
+    description: '`type` = `terms` (Termos de Uso) ou `privacy` (Política de Privacidade). O texto é versionado (`version`): a versão aceita fica registrada no cadastro. Texto-modelo, sem revisão de advogado.',
+  },
+
+  // ---------------- assinatura da clínica ----------------
+  'GET /api/billing/status': {
+    summary: 'Situação da assinatura', status: 200, response: ref('StatusAssinatura'),
+    description: 'Resumo para o aviso no topo do painel (dias de teste, atraso, suspensão). **Qualquer perfil** vê, e funciona mesmo com a assinatura suspensa.',
+  },
+  'GET /api/billing': {
+    summary: 'Minha assinatura', status: 200, response: ref('Assinatura'),
+    description: 'Tela de assinatura: situação, plano, planos à venda, **fatura em aberto com o Pix** (chave e "copia e cola" com o valor) e as últimas faturas pagas. A fatura do próximo mês é criada quando faltam poucos dias para acabar o período. Funciona com a assinatura suspensa.',
+  },
+  'POST /api/billing/plan': {
+    summary: 'Escolher ou trocar o plano', status: 200, response: ref('Assinatura'),
+    description: 'Define o plano e gera a fatura (a anterior em aberto é substituída). O período pago começa depois do teste ou do período já pago. O limite de dentistas do novo plano vale na hora.',
+    errors: {
+      404: 'Plano não encontrado ou desativado.',
+      409: 'Há um pagamento avisado aguardando confirmação (`PAYMENT_PENDING`).',
+      422: 'A clínica tem mais dentistas ativos do que o plano permite (`PLAN_LIMIT`).',
+    },
+  },
+  'POST /api/billing/invoices/:id/reported': {
+    summary: 'Avisar que paguei ("Já paguei")', status: 200, response: ref('Assinatura'),
+    description: 'Só sinaliza: o dono da plataforma é avisado e confere o Pix antes de confirmar. A fatura continua em aberto até a confirmação.',
+    errors: { 409: 'A fatura não está em aberto (`INVOICE_NOT_OPEN`) ou o pagamento já foi avisado (`ALREADY_REPORTED`).' },
+  },
+
+  // ---------------- conta e LGPD ----------------
+  'GET /api/account/export': {
+    summary: 'Exportar todos os dados da clínica', status: 200, response: ref('Exportacao'),
+    description: 'Devolve todas as tabelas da clínica (pacientes, atendimentos, orçamentos, pagamentos, repasses…), sem senhas nem tokens. **Funciona com a assinatura suspensa**: a clínica nunca fica sem acesso aos próprios dados.',
+  },
+  'POST /api/account/deletion-request': {
+    summary: 'Pedir a exclusão da conta e dos dados', status: 200, response: ref('PedidoExclusao'),
+    description: 'Exige a senha do administrador. Registra o pedido (LGPD) e avisa o dono da plataforma, que apaga os dados preservando só o que a lei manda guardar. Repetir o pedido não faz nada. Exporte os dados antes.',
+    errors: { 400: 'Senha incorreta (`WRONG_PASSWORD`).' },
+  },
+  'DELETE /api/account/deletion-request': {
+    summary: 'Cancelar o pedido de exclusão', status: 200, response: ref('PedidoExclusao'),
+    description: 'Retira o pedido, enquanto os dados ainda não foram apagados.',
+  },
+
   // ---------------- autenticação ----------------
   'POST /api/auth/login': {
     summary: 'Entrar', status: 200, response: ref('Sessao'),
@@ -44,18 +102,29 @@ export const DOCS = {
 
   // ---------------- clínica e usuários ----------------
   'GET /api/clinic': { summary: 'Minha clínica', status: 200, response: ref('Clinica') },
+  'GET /api/clinic/onboarding': {
+    summary: 'Primeiros passos da clínica', status: 200, response: ref('Onboarding'),
+    description: 'Lista de tarefas para a clínica nova: conferir os preços de exemplo do modelo (só quando o modelo trouxe procedimentos), cadastrar a equipe, o primeiro paciente e a primeira consulta.',
+  },
+  'POST /api/clinic/onboarding/prices-reviewed': {
+    summary: 'Confirmar que conferi os preços de exemplo', status: 200, response: ref('Onboarding'),
+    description: 'Marca o passo "conferir os preços". Os preços do modelo são só exemplos de mercado: a clínica deve ajustá-los em Procedimentos.',
+  },
   'PATCH /api/clinic': { summary: 'Alterar minha clínica', status: 200, response: ref('Clinica'), description: 'Nome e documento. Plano e situação só a plataforma altera.' },
   'GET /api/users': { summary: 'Listar usuários', status: 200, response: page('Usuario'), description: 'Só da própria clínica, em ordem de nome.' },
   'POST /api/users': {
     summary: 'Criar usuário', status: 201, response: ref('Usuario'),
     description: 'Cria o usuário e envia o e-mail de verificação (o usuário só entra depois de confirmar). Perfil `dentist` ganha automaticamente o perfil profissional em Dentistas.',
-    errors: { 409: 'E-mail já cadastrado (o e-mail é único em todo o sistema).' },
+    errors: {
+      409: 'E-mail já cadastrado (o e-mail é único em todo o sistema).',
+      422: 'O plano da clínica não permite mais dentistas ativos (`PLAN_LIMIT`). No teste grátis não há limite.',
+    },
   },
   'GET /api/users/:id': { summary: 'Consultar usuário', status: 200, response: ref('Usuario') },
   'PATCH /api/users/:id': {
     summary: 'Alterar usuário', status: 200, response: ref('Usuario'),
     description: 'Nome, perfil e situação (`active`). Desativar encerra as sessões do usuário. O administrador não pode se desativar nem se rebaixar.',
-    errors: { 422: 'O administrador não pode desativar nem alterar o próprio perfil.' },
+    errors: { 422: 'O administrador não pode desativar nem alterar o próprio perfil, ou reativar/promover alguém a dentista passaria do limite do plano (`PLAN_LIMIT`).' },
   },
 
   // ---------------- dentistas e procedimentos ----------------
@@ -131,7 +200,7 @@ export const DOCS = {
   'GET /api/appointments/:id': { summary: 'Consultar atendimento', status: 200, response: ref('Atendimento') },
   'POST /api/appointments': {
     summary: 'Agendar', status: 201, response: ref('Atendimento'),
-    description: 'Datas em ISO 8601 com fuso. Para o perfil dentista, `dentistId` é opcional (vale a própria agenda).',
+    description: 'Datas em ISO 8601 com fuso. Para o perfil dentista, `dentistId` é opcional (vale a própria agenda). **Não aceita data e hora que já passaram** (400 `PAST_DATE`; um encaixe de até 5 minutos atrás é tolerado).',
     errors: {
       404: E404_REF, 409: 'Horário indisponível (`SLOT_TAKEN`): o dentista já tem atendimento ativo neste período.',
       422: 'Paciente arquivado ou dentista desativado.',
@@ -139,7 +208,7 @@ export const DOCS = {
   },
   'PATCH /api/appointments/:id': {
     summary: 'Remarcar ou editar', status: 200, response: ref('Atendimento'),
-    description: 'Se só o início mudar, a duração é mantida. Mudar horário ou dentista volta o atendimento para `scheduled`. Só atendimentos agendados ou confirmados podem ser alterados.',
+    description: 'Se só o início mudar, a duração é mantida. Mudar horário ou dentista volta o atendimento para `scheduled`. Só atendimentos agendados ou confirmados podem ser alterados. Remarcar para uma data que já passou responde 400 `PAST_DATE`.',
     errors: { 409: 'Horário indisponível (`SLOT_TAKEN`) ou atendimento já finalizado.', 422: 'Dentista de destino desativado.' },
   },
   'POST /api/appointments/:id/status': {
@@ -318,13 +387,46 @@ export const DOCS = {
     description: 'Usa um segredo de JWT próprio: o token da plataforma nunca vale como token de clínica, e vice-versa.',
     errors: { 401: E401_LOGIN },
   },
-  'GET /api/platform/clinics': { summary: 'Listar clínicas', status: 200, response: page('Clinica') },
+  'GET /api/platform/overview': {
+    summary: 'Visão geral da plataforma', status: 200, response: ref('VisaoGeral'),
+    description: 'Clínicas por situação da assinatura, receita mensal recorrente, faturas esperando conferência, pedidos de exclusão e cadastros recentes.',
+  },
+  'GET /api/platform/clinics': {
+    summary: 'Listar clínicas', status: 200, response: page('ClinicaPlataforma'),
+    description: 'Cada clínica vem com o resumo da assinatura (`subscription`). `billing` filtra pela situação da assinatura (`trial`, `active`, `past_due`, `suspended`…).',
+  },
   'POST /api/platform/clinics': {
     summary: 'Criar clínica com o primeiro administrador', status: 201, response: ref('ClinicaCriada'),
     description: 'Cria a clínica e o administrador na mesma transação e envia o e-mail de verificação (o administrador só entra depois de confirmar). O `slug` é gerado do nome se não for informado.',
     errors: { 409: 'Slug já em uso ou e-mail do administrador já cadastrado.' },
   },
-  'GET /api/platform/clinics/:id': { summary: 'Consultar clínica', status: 200, response: ref('Clinica') },
+  'GET /api/platform/clinics/:id': { summary: 'Consultar clínica', status: 200, response: ref('ClinicaPlataforma') },
+  'GET /api/platform/clinics/:id/billing': {
+    summary: 'Assinatura da clínica', status: 200, response: ref('AssinaturaPlataforma'),
+    description: 'Situação, plano, fatura em aberto (com Pix), faturas pagas e os últimos eventos de cobrança (auditoria).',
+  },
+  'POST /api/platform/clinics/:id/invoices/:invoiceId/pay': {
+    summary: 'Confirmar o Pix de uma fatura', status: 200, response: ref('AssinaturaPlataforma'),
+    description: 'Marca a fatura como paga e estende o acesso por 1 mês: o período começa depois da cobertura atual (teste ou pagamento anterior) ou hoje, se já venceu.',
+    errors: { 404: 'Clínica ou fatura não encontrada.', 409: 'A fatura não está em aberto (`INVOICE_NOT_OPEN`).' },
+  },
+  'POST /api/platform/clinics/:id/trial/extend': {
+    summary: 'Estender o período de teste', status: 200, response: ref('AssinaturaPlataforma'),
+    description: 'Soma `days` ao teste, a partir do fim dele (ou de hoje, se já acabou). Reativa uma clínica suspensa que ainda não pagou.',
+  },
+  'PUT /api/platform/clinics/:id/courtesy': {
+    summary: 'Definir cortesia (uso grátis)', status: 200, response: ref('AssinaturaPlataforma'),
+    description: '`indefinite: true` = grátis sem prazo; `until` = grátis até a data; sem nenhum dos dois, remove a cortesia.',
+  },
+  'GET /api/platform/invoices': {
+    summary: 'Fila de faturas', status: 200, response: page('FaturaPlataforma'),
+    description: 'Por padrão, as faturas em aberto (`status=OPEN`). Com `reported=true`, só as que a clínica disse ter pago: é a fila de conferência do Pix.',
+  },
+  'GET /api/platform/plans': { summary: 'Listar planos', status: 200, response: array('Plano'), description: 'Todos os planos, inclusive os desativados.' },
+  'PATCH /api/platform/plans/:id': {
+    summary: 'Alterar plano', status: 200, response: ref('Plano'),
+    description: 'Nome, descrição, preço mensal, limite de dentistas (`null` = ilimitado), situação e ordem. O novo preço vale nas faturas criadas daí em diante; as já emitidas mantêm o valor.',
+  },
   'PATCH /api/platform/clinics/:id': {
     summary: 'Alterar clínica', status: 200, response: ref('Clinica'),
     description: 'Nome, documento, plano e situação. `status: suspended` bloqueia a clínica na hora (todas as rotas passam a responder 403 `CLINIC_SUSPENDED`).',

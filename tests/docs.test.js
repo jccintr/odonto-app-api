@@ -70,7 +70,7 @@ describe('especificação OpenAPI', () => {
   it('descreve quem pode chamar e os erros padrão de cada rota', () => {
     const cancel = spec.paths['/api/payments/{id}/cancel'].post;
     expect(cancel.description).toContain('Acesso: administrador, secretária.');
-    expect(Object.keys(cancel.responses).sort()).toEqual(['200', '400', '401', '403', '404', '409', '413', '429', '500']);
+    expect(Object.keys(cancel.responses).sort()).toEqual(['200', '400', '401', '402', '403', '404', '409', '413', '429', '500']);
 
     const login = spec.paths['/api/auth/login'].post;
     expect(login.description).toContain('Acesso: público');

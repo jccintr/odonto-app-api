@@ -167,3 +167,19 @@ describe('modelos de e-mail', () => {
     expect(html).toContain('&lt;i&gt;x&lt;/i&gt;');
   });
 });
+
+describe('aviso ao dono da plataforma', () => {
+  it('sem OWNER_EMAIL não envia nada', async () => {
+    configure();
+    expect(mailer.sendOwnerNotice({ subject: 'Teste', text: 'x' })).toEqual({ skipped: true });
+    expect(sendMail).not.toHaveBeenCalled();
+  });
+
+  it('com OWNER_EMAIL envia texto e HTML escapado', async () => {
+    configure({ OWNER_EMAIL: 'dono@odonto.com.br' });
+    await mailer.sendOwnerNotice({ subject: 'Pagamento informado', text: 'Clínica <b>X</b> & Cia' });
+    const sent = sendMail.mock.calls[0][0];
+    expect(sent).toMatchObject({ to: 'dono@odonto.com.br', subject: '[OdontoApp] Pagamento informado', text: 'Clínica <b>X</b> & Cia' });
+    expect(sent.html).toContain('Clínica &lt;b&gt;X&lt;/b&gt; &amp; Cia');
+  });
+});

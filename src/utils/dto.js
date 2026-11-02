@@ -222,3 +222,31 @@ export const toNotificationDto = (n) => ({
   sentAt: n.sent_at,
   createdAt: n.created_at,
 });
+
+export const toPlanDto = (p) => ({
+  id: p.id,
+  code: p.code,
+  name: p.name,
+  description: p.description,
+  priceCents: p.price_cents,
+  maxDentists: p.max_dentists,
+  active: p.active,
+});
+
+/** `pix` só vai quando a fatura está em aberto e a plataforma tem chave Pix configurada. */
+export const toInvoiceDto = (i, pix = null) => ({
+  id: i.id,
+  clinicId: i.clinic_id,
+  planId: i.plan_id,
+  amountCents: i.amount_cents,
+  periodStart: i.period_start,
+  periodEnd: i.period_end,
+  dueOn: i.due_on,
+  status: i.status,
+  reportedPaidAt: i.reported_paid_at,
+  reportedNote: i.reported_note,
+  paidAt: i.paid_at,
+  paymentNote: i.payment_note,
+  createdAt: i.created_at,
+  pix,
+});

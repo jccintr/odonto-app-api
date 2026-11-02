@@ -1,9 +1,9 @@
 // Jornada completa pela API: do cadastro da clínica até o pagamento, passando por TODAS as rotas com sucesso.
 // Cada resposta é conferida contra a documentação (helpers/contract.js). No fim, confirma que nenhuma rota ficou sem ser
 // exercitada: rota nova que não entrar nesta jornada (ou na documentação) faz o teste falhar.
-import { expect, it } from 'vitest';
+import { expect, it, vi } from 'vitest';
 import db from '../src/db/knex.js';
-import { signPlatformToken } from '../src/services/tokens.js';
+import { signPlatformToken, verifyPlatformToken } from '../src/services/tokens.js';
 import { sendPasswordResetEmail, sendVerificationEmail } from '../src/services/mailer.js';
 import { spec, validated } from './helpers/contract.js';
 import { fake } from './helpers/fakeStorage.js';
@@ -23,10 +23,13 @@ it('percorre o sistema inteiro e todas as rotas respondem como a documentação 
   const platformAdmin = await createPlatformAdmin({ password: 'senha-da-plataforma-1' });
   const platformLogin = await step('plataforma login', api().post('/api/platform/login').send({ email: platformAdmin.email, password: 'senha-da-plataforma-1' }), 200);
   const platform = bearer(platformLogin.token);
-  expect(platformLogin.token).toBe(signPlatformToken(platformAdmin)); // mesmo segredo e dono
+  // mesmo segredo e dono (compara o conteúdo, não o texto: o "iat" do token tem precisão de 1 segundo e pode virar entre as duas chamadas)
+  expect(verifyPlatformToken(platformLogin.token)).toMatchObject({ sub: platformAdmin.id, scope: 'platform' });
+  expect(verifyPlatformToken(signPlatformToken(platformAdmin))).toMatchObject({ sub: platformAdmin.id, scope: 'platform' });
   const created = await step('criar clínica', api().post('/api/platform/clinics').set(platform).send({
     name: 'Clínica Sorriso', admin: { name: 'Dra. Ana', email: 'ana@sorriso.test', password: 'senha-da-ana-123' },
   }), 201);
+  await step('visão geral', api().get('/api/platform/overview').set(platform), 200);
   await step('listar clínicas', api().get('/api/platform/clinics').set(platform), 200);
   await step('consultar clínica', api().get(`/api/platform/clinics/${created.clinic.id}`).set(platform), 200);
   await step('alterar clínica', api().patch(`/api/platform/clinics/${created.clinic.id}`).set(platform).send({ plan: 'premium' }), 200);
@@ -164,6 +167,45 @@ it('percorre o sistema inteiro e todas as rotas respondem como a documentação 
   expect(report.dentists[0].dentist.id).toBe(dentist.id);
   const trend = await step('evolução', api().get('/api/reports/trend?months=3').set(admin), 200);
   expect(trend.data).toHaveLength(3);
+
+  // ---- cadastro público e textos legais ----
+  await step('opções do cadastro', api().get('/api/signup/options'), 200);
+  await step('termos de uso', api().get('/api/legal/terms'), 200);
+  await step('política de privacidade', api().get('/api/legal/privacy'), 200);
+  const signup = await step('cadastro público', api().post('/api/signup').send({
+    clinicName: 'Clínica Autoatendimento', template: 'orthodontics', acceptTerms: true,
+    admin: { name: 'Dr. Caio', email: 'caio@auto.test', password: 'senha-do-caio-123' },
+  }), 201);
+  expect(signup.trialEndsOn).toBeTruthy();
+
+  // ---- primeiros passos, assinatura (Pix) e conta ----
+  vi.stubEnv('BILLING_PIX_KEY', '11144477735');
+  const onboarding = await step('primeiros passos', api().get('/api/clinic/onboarding').set(admin), 200);
+  expect(onboarding.completed).toBe(true); // a jornada já cadastrou equipe, paciente e consulta
+  await step('conferi os preços', api().post('/api/clinic/onboarding/prices-reviewed').set(admin).send({}), 200);
+  const status = await step('situação da assinatura', api().get('/api/billing/status').set(admin), 200);
+  expect(status.state).toBe('trial');
+  const subscription = await step('minha assinatura', api().get('/api/billing').set(admin), 200);
+  const withPlan = await step('escolher plano', api().post('/api/billing/plan').set(admin).send({ planId: subscription.plans[1].id }), 200);
+  expect(withPlan.invoice.pix.payload).toBeTruthy();
+  const reported = await step('já paguei', api().post(`/api/billing/invoices/${withPlan.invoice.id}/reported`).set(admin).send({ note: 'Pix feito' }), 200);
+  expect(reported.invoice.reportedPaidAt).toBeTruthy();
+
+  const queue = await step('fila de faturas', api().get('/api/platform/invoices?reported=true').set(platform), 200);
+  expect(queue.data.map((i) => i.id)).toEqual([withPlan.invoice.id]);
+  await step('assinatura vista pela plataforma', api().get(`/api/platform/clinics/${created.clinic.id}/billing`).set(platform), 200);
+  const paid = await step('confirmar o Pix', api().post(`/api/platform/clinics/${created.clinic.id}/invoices/${withPlan.invoice.id}/pay`).set(platform).send({ note: 'Conferido' }), 200);
+  expect(paid.state).toBe('active');
+  await step('estender o teste', api().post(`/api/platform/clinics/${created.clinic.id}/trial/extend`).set(platform).send({ days: 7 }), 200);
+  await step('definir cortesia', api().put(`/api/platform/clinics/${created.clinic.id}/courtesy`).set(platform).send({ indefinite: true }), 200);
+  const plans = await step('listar planos', api().get('/api/platform/plans').set(platform), 200);
+  await step('alterar plano', api().patch(`/api/platform/plans/${plans[0].id}`).set(platform).send({ priceCents: 8900 }), 200);
+
+  const exported = await step('exportar os dados', api().get('/api/account/export').set(admin), 200);
+  expect(exported.tables.patients.length).toBeGreaterThan(0);
+  await step('pedir exclusão', api().post('/api/account/deletion-request').set(admin).send({ password: 'senha-final-789' }), 200);
+  await step('cancelar exclusão', api().delete('/api/account/deletion-request').set(admin), 200);
+  vi.unstubAllEnvs();
 
   // ---- nenhuma rota ficou de fora ----
   const missing = Object.entries(spec.paths).flatMap(([path, methods]) =>

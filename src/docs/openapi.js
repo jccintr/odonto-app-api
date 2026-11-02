@@ -2,6 +2,7 @@
 // (ver discover.js); os textos e os schemas de resposta vêm de descriptions.js e schemas.js.
 import { readFileSync } from 'node:fs';
 import { z } from '../config/zod.js';
+import { isOpenWhenSuspended } from '../modules/billing/access.js';
 import { DOCS } from './descriptions.js';
 import { listRoutes } from './discover.js';
 import { ref, SCHEMAS } from './schemas.js';
@@ -30,7 +31,10 @@ const ROLE_NAMES = { admin: 'administrador', secretary: 'secretária', dentist: 
 
 const TAGS = [
   ['Autenticação', 'Entrada, renovação de sessão, verificação de e-mail e senha.'],
-  ['Clínica', 'Dados da própria clínica.'],
+  ['Cadastro', 'Cadastro público de clínicas (autoatendimento), modelos e textos legais (Termos de Uso e Política de Privacidade).'],
+  ['Assinatura', 'Teste grátis, plano, faturas e pagamento por Pix da clínica.'],
+  ['Conta', 'LGPD: exportar os dados da clínica e pedir a exclusão da conta.'],
+  ['Clínica', 'Dados da própria clínica e primeiros passos.'],
   ['Usuários', 'Gestão dos usuários da clínica (administrador).'],
   ['Dentistas', 'Dados profissionais dos dentistas.'],
   ['Procedimentos', 'Tabela de procedimentos e preços.'],
@@ -52,7 +56,7 @@ function tagFor({ path }) {
   if (path.includes('/payment')) return 'Pagamentos';
   const group = path.split('/')[2];
   return {
-    auth: 'Autenticação', clinic: 'Clínica', users: 'Usuários', dentists: 'Dentistas', procedures: 'Procedimentos',
+    auth: 'Autenticação', signup: 'Cadastro', legal: 'Cadastro', billing: 'Assinatura', account: 'Conta', clinic: 'Clínica', users: 'Usuários', dentists: 'Dentistas', procedures: 'Procedimentos',
     patients: 'Pacientes', appointments: 'Agenda', budgets: 'Orçamentos', payouts: 'Repasse', reports: 'Relatórios', notifications: 'Avisos', platform: 'Plataforma',
   }[group];
 }
@@ -78,6 +82,9 @@ function responsesFor(route, doc) {
   if (route.schemas.body) responses[413] = errorResponse('Corpo da requisição grande demais.');
   if (route.auth) {
     responses[401] = errorResponse('Não autenticado: token ausente, inválido, expirado ou de sessão encerrada.');
+    if (route.auth === 'clinic' && !isOpenWhenSuspended(route.method, route.path)) {
+      responses[402] = errorResponse('Assinatura da clínica suspensa ou cancelada (`SUBSCRIPTION_SUSPENDED`). Só a tela de assinatura, a exportação dos dados, o login e a leitura da clínica seguem liberados.');
+    }
     responses[403] = errorResponse('Sem permissão para esta ação, ou conta sem acesso (e-mail não verificado, usuário desativado ou clínica suspensa).');
   }
   if (route.path.includes(':')) responses[404] = errorResponse('Recurso não encontrado. Recursos de outra clínica também respondem 404, para não revelar que existem.');
@@ -111,7 +118,7 @@ function operationFor(route, doc) {
 const INFO_DESCRIPTION = `API do OdontoApp: sistema multi-clínica de gestão odontológica (web da secretária/administração e app do dentista).
 
 ## Como usar
-1. O dono da plataforma cadastra a clínica (\`POST /api/platform/clinics\`) e o primeiro administrador recebe um e-mail de verificação.
+1. A clínica se cadastra sozinha (\`POST /api/signup\`, com aceite dos Termos) e começa em **teste grátis**; o dono da plataforma também pode cadastrá-la (\`POST /api/platform/clinics\`). O primeiro administrador recebe um e-mail de verificação.
 2. Cada usuário **confirma o e-mail** (\`POST /api/auth/verify-email\`) e entra (\`POST /api/auth/login\`).
 3. Envie o \`accessToken\` em todas as chamadas: \`Authorization: Bearer <accessToken>\`. Ele dura pouco; renove com \`POST /api/auth/refresh\`.
 

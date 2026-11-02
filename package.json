@@ -16,7 +16,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
-    "platform-admin:create": "node src/scripts/create-platform-admin.js"
+    "platform-admin:create": "node src/scripts/create-platform-admin.js",
+    "demo": "node src/scripts/demo-server.js"
   },
   "dependencies": {
     "bcryptjs": "^3.0.3",

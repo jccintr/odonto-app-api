@@ -37,6 +37,7 @@ describe('mapa de rotas', () => {
 
   it('rotas públicas são só as de entrada e recuperação de conta', () => {
     expect(publicRoutes.map((e) => e.key)).toEqual([
+      'GET /api/signup/options', 'POST /api/signup', 'GET /api/legal/:type',
       'POST /api/auth/login', 'POST /api/auth/refresh', 'POST /api/auth/logout', 'POST /api/auth/verify-email',
       'POST /api/auth/resend-verification', 'POST /api/auth/forgot-password', 'POST /api/auth/reset-password', 'POST /api/platform/login',
     ]);

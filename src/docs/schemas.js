@@ -5,6 +5,7 @@ import { NOTIFICATION_KINDS, NOTIFICATION_STATUSES, NOTIFICATION_TRIGGERS } from
 import { IMAGE_FORMATS, IMAGE_KINDS } from '../utils/images.js';
 import { PAYOUT_RELEASE_MODES, PAYOUT_RULE_SOURCES, PAYOUT_RULE_TYPES, PAYOUT_STATUSES } from '../utils/payouts.js';
 import { CONDITIONS } from '../utils/tooth.js';
+import { BILLING_STATES } from '../modules/billing/access.js';
 import { PAYMENT_METHODS, PAYMENT_STATUSES } from '../utils/payments.js';
 
 const str = { type: 'string' };
@@ -40,6 +41,27 @@ const budgetStatus = enumOf(['open', 'approved', 'rejected', 'completed'], 'open
 const itemStatus = enumOf(['pending', 'done', 'canceled']);
 const nMethod = nEnumOf(PAYMENT_METHODS);
 
+const nullable = (name) => ({ anyOf: [ref(name), { type: 'null' }] });
+const billingState = enumOf(BILLING_STATES, 'trial = em teste grátis; active = plano pago em dia; courtesy = cortesia da plataforma; past_due = venceu, em carência (segue usando, com aviso); suspended = suspensa (só a tela de assinatura e a exportação funcionam); canceled = suspensa há muito tempo, perto de ser encerrada.');
+const statusProps = {
+  state: billingState,
+  blocked: { type: 'boolean', description: 'true = suspended ou canceled: o painel responde 402 `SUBSCRIPTION_SUSPENDED` fora das rotas liberadas.' },
+  endsOn: { type: ['string', 'null'], format: 'date', description: 'Último dia coberto (teste, plano pago ou cortesia). null na cortesia sem fim.' },
+  daysLeft: { type: ['integer', 'null'], description: 'Dias até `endsOn`; negativo = dias de atraso. null na cortesia sem fim.' },
+  graceEndsOn: { type: ['string', 'null'], format: 'date', description: 'Último dia da carência depois do fim da cobertura.' },
+};
+const subscriptionProps = {
+  ...statusProps,
+  trialEndsOn: date, paidUntil: nDate, courtesyUntil: nDate, courtesyIndefinite: bool, deletionRequestedAt: nDateTime,
+  plan: nullable('Plano'), plans: array('Plano'), invoice: nullable('Fatura'), invoices: array('Fatura'),
+  pixConfigured: { type: 'boolean', description: 'false = a plataforma ainda não configurou a chave Pix (a fatura não mostra como pagar).' },
+};
+const invoiceProps = {
+  id: uuid, clinicId: uuid, planId: uuid, amountCents: money, periodStart: date, periodEnd: date, dueOn: date,
+  status: enumOf(['OPEN', 'PAID', 'VOID'], 'OPEN = a pagar; PAID = paga e confirmada; VOID = substituída (troca de plano).'),
+  reportedPaidAt: nDateTime, reportedNote: nstr, paidAt: nDateTime, paymentNote: nstr, createdAt: dateTime, pix: nullable('Pix'),
+};
+
 export const SCHEMAS = {
   Erro: {
     type: 'object',
@@ -54,6 +76,39 @@ export const SCHEMAS = {
     required: ['error'],
   },
   Mensagem: obj({ message: str }),
+
+  // ---- cadastro público, legal, assinatura e conta ----
+  ModeloClinica: obj({ code: str, name: str, description: str, procedureCount: int }),
+  OpcoesCadastro: obj({
+    signupEnabled: bool, trialDays: int, legalVersion: str,
+    captchaRequired: { type: 'boolean', description: 'true = enviar `captchaToken` (Cloudflare Turnstile) no cadastro.' },
+    templates: array('ModeloClinica'), plans: array('Plano'),
+  }),
+  Cadastro: obj({ clinic: ref('Clinica'), admin: ref('Usuario'), trialEndsOn: date, message: str }),
+  DocumentoLegal: obj({
+    type: enumOf(['terms', 'privacy']), version: str, updatedOn: date, title: str, intro: str,
+    sections: { type: 'array', items: obj({ title: str, paragraphs: { type: 'array', items: str }, items: { type: 'array', items: str } }) },
+  }),
+  Plano: obj({ id: uuid, code: str, name: str, description: nstr, priceCents: money, maxDentists: { type: ['integer', 'null'], description: 'null = dentistas ilimitados.' }, active: bool }),
+  Pix: obj({
+    beneficiary: str, instructions: nstr, key: { type: 'string', description: 'Chave Pix, no formato usado dentro do QR.' },
+    payload: { type: ['string', 'null'], description: 'Pix "copia e cola" (também é o conteúdo do QR Code) com o valor da fatura. null quando a chave não gera QR (veja `reason`).' },
+    reason: nstr,
+  }),
+  Fatura: obj(invoiceProps),
+  FaturaPlataforma: obj({ ...invoiceProps, clinicName: str }),
+  StatusAssinatura: obj({ ...statusProps, planName: nstr }),
+  Assinatura: obj(subscriptionProps),
+  AssinaturaPlataforma: obj({
+    ...subscriptionProps,
+    events: { type: 'array', items: obj({ type: str, actor: nstr, data: { type: 'object', additionalProperties: true }, createdAt: dateTime }) },
+  }),
+  Onboarding: obj({ steps: { type: 'array', items: obj({ key: str, label: str, done: bool }) }, completed: bool }),
+  Exportacao: obj({
+    exportedAt: dateTime, clinic: ref('Clinica'),
+    tables: { type: 'object', additionalProperties: { type: 'array', items: { type: 'object', additionalProperties: true } }, description: 'Uma lista de linhas por tabela, sem senhas nem tokens.' },
+  }),
+  PedidoExclusao: obj({ deletionRequestedAt: nDateTime }),
 
   Usuario: obj({
     id: uuid, clinicId: uuid, name: str, email: str, role, active: bool,
@@ -70,6 +125,18 @@ export const SCHEMAS = {
   }),
   Perfil: obj({ user: ref('Usuario'), clinic: ref('Clinica') }),
   AdminPlataforma: obj({ id: uuid, name: str, email: str, active: bool }),
+  ClinicaPlataforma: obj({
+    id: uuid, name: str, slug: str, document: nstr, plan: str, status: enumOf(['active', 'suspended']), createdAt: dateTime, updatedAt: dateTime,
+    subscription: obj({
+      ...statusProps, planName: nstr, deletionRequestedAt: nDateTime, templateCode: { type: ['string', 'null'], description: 'Modelo escolhido no cadastro; null = criada pela plataforma.' },
+    }),
+  }),
+  VisaoGeral: obj({
+    clinics: obj({ total: int, suspendedManually: int, byState: obj(Object.fromEntries(BILLING_STATES.map((state) => [state, int]))) }),
+    mrrCents: { type: 'integer', description: 'Receita mensal recorrente: soma dos planos das clínicas em dia ou em carência.' },
+    awaitingConfirmation: obj({ count: int, amountCents: int }, 'Faturas que a clínica disse ter pago e esperam sua conferência.'),
+    openInvoices: int, deletionRequests: int, newLast7Days: int, newLast30Days: int,
+  }),
   SessaoPlataforma: obj({ token: str, admin: ref('AdminPlataforma') }),
   ClinicaCriada: obj({ clinic: ref('Clinica'), admin: ref('Usuario') }),
 

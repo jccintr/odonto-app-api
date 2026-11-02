@@ -11,6 +11,19 @@ export const ADMIN = ['admin'];
 export const STAFF = ['admin', 'secretary']; // administração e secretária
 
 export const ACCESS = {
+  // ---- cadastro público e textos legais ----
+  'GET /api/signup/options': { access: 'public' },
+  'POST /api/signup': { access: 'public' },
+  'GET /api/legal/:type': { access: 'public' },
+  // ---- assinatura da clínica (cobrança por Pix) ----
+  'GET /api/billing/status': { access: ANY, noRefs: true },
+  'GET /api/billing': { access: ADMIN, noRefs: true },
+  'POST /api/billing/plan': { access: ADMIN, noRefs: true, body: (f) => ({ planId: f.plan.id }) },
+  'POST /api/billing/invoices/:id/reported': { access: ADMIN, params: { id: 'invoice' }, body: () => ({}) },
+  // ---- conta (LGPD) ----
+  'GET /api/account/export': { access: ADMIN, noRefs: true },
+  'POST /api/account/deletion-request': { access: ADMIN, noRefs: true, body: () => ({ password: 'senha-errada-1' }) },
+  'DELETE /api/account/deletion-request': { access: ADMIN, noRefs: true },
   // ---- autenticação ----
   'POST /api/auth/login': { access: 'public' },
   'POST /api/auth/refresh': { access: 'public' },
@@ -23,6 +36,8 @@ export const ACCESS = {
   'POST /api/auth/change-password': { access: ANY, noRefs: true, body: () => ({ currentPassword: 'senha-errada-1', newPassword: 'nova-senha-123' }) },
   // ---- clínica e usuários ----
   'GET /api/clinic': { access: ANY, noRefs: true },
+  'GET /api/clinic/onboarding': { access: ADMIN, noRefs: true },
+  'POST /api/clinic/onboarding/prices-reviewed': { access: ADMIN, noRefs: true, body: () => ({}) },
   'PATCH /api/clinic': { access: ADMIN, noRefs: true, body: () => ({ name: 'Clínica Renomeada' }) },
   'GET /api/users': { access: ADMIN, noRefs: true },
   'POST /api/users': { access: ADMIN, noRefs: true, body: (f) => ({ name: 'Novo Usuário', email: `novo.${f.label}@seg.test`, password: 'senha-segura-123', role: 'secretary' }) },
@@ -110,6 +125,7 @@ export const ACCESS = {
   'GET /api/reports/trend': { access: ADMIN, noRefs: true },
   // ---- plataforma ----
   'POST /api/platform/login': { access: 'public' },
+  'GET /api/platform/overview': { access: 'platform', noRefs: true },
   'GET /api/platform/clinics': { access: 'platform', noRefs: true },
   'POST /api/platform/clinics': {
     access: 'platform', noRefs: true,
@@ -117,11 +133,18 @@ export const ACCESS = {
   },
   'GET /api/platform/clinics/:id': { access: 'platform', params: { id: 'clinic' } },
   'PATCH /api/platform/clinics/:id': { access: 'platform', params: { id: 'clinic' }, body: () => ({ plan: 'premium' }) },
+  'GET /api/platform/clinics/:id/billing': { access: 'platform', params: { id: 'clinic' } },
+  'POST /api/platform/clinics/:id/invoices/:invoiceId/pay': { access: 'platform', params: { id: 'clinic', invoiceId: 'invoice' }, body: () => ({}) },
+  'POST /api/platform/clinics/:id/trial/extend': { access: 'platform', params: { id: 'clinic' }, body: () => ({ days: 7 }) },
+  'PUT /api/platform/clinics/:id/courtesy': { access: 'platform', params: { id: 'clinic' }, body: () => ({ indefinite: false, until: null }) },
+  'GET /api/platform/invoices': { access: 'platform', noRefs: true },
+  'GET /api/platform/plans': { access: 'platform', noRefs: true },
+  'PATCH /api/platform/plans/:id': { access: 'platform', params: { id: 'plan' }, body: () => ({ description: 'Plano ajustado' }) },
 };
 
 export const RESOURCE = {
   target: (f) => f.target.id, dentist: (f) => f.d1.dentist.id, procedure: (f) => f.procedure.id, patient: (f) => f.patient.id,
   budget: (f) => f.budget.id, item: (f) => f.item.id, appointment: (f) => f.appointment.id, payment: (f) => f.payment.id,
-  record: (f) => f.record.id, clinic: (f) => f.clinic.id, rule: (f) => f.rule.id, image: (f) => f.image.id, payout: (f) => f.payout.id,
+  record: (f) => f.record.id, clinic: (f) => f.clinic.id, rule: (f) => f.rule.id, image: (f) => f.image.id, payout: (f) => f.payout.id, invoice: (f) => f.invoice.id, plan: (f) => f.plan.id,
 };
 

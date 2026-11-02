@@ -1,9 +1,11 @@
 import { Router } from 'express';
+import accountRoutes from './modules/account/account.routes.js';
 import appointmentsRoutes from './modules/appointments/appointments.routes.js';
 import authRoutes from './modules/auth/auth.routes.js';
 import clinicRoutes from './modules/clinic/clinic.routes.js';
 import dentistsRoutes from './modules/dentists/dentists.routes.js';
 import imagesRoutes from './modules/images/images.routes.js';
+import legalRoutes from './modules/legal/legal.routes.js';
 import notificationsRoutes from './modules/notifications/notifications.routes.js';
 import odontogramRoutes from './modules/odontogram/odontogram.routes.js';
 import patientsRoutes from './modules/patients/patients.routes.js';
@@ -13,7 +15,9 @@ import payoutsRoutes from './modules/payouts/payouts.routes.js';
 import reportsRoutes from './modules/reports/reports.routes.js';
 import platformRoutes from './modules/platform/platform.routes.js';
 import proceduresRoutes from './modules/procedures/procedures.routes.js';
+import billingRoutes from './modules/billing/billing.routes.js';
 import budgetsRoutes from './modules/budgets/budgets.routes.js';
+import signupRoutes from './modules/signup/signup.routes.js';
 import usersRoutes from './modules/users/users.routes.js';
 
 const router = Router();
@@ -22,6 +26,10 @@ const router = Router();
 // automaticamente: rota nova sem regra de acesso declarada lá faz o teste falhar. A ordem importa (mais específicas primeiro).
 export const MOUNTS = [
   ['/auth', authRoutes],
+  ['/signup', signupRoutes],
+  ['/legal', legalRoutes],
+  ['/billing', billingRoutes],
+  ['/account', accountRoutes],
   ['/clinic', clinicRoutes],
   ['/users', usersRoutes],
   ['/dentists', dentistsRoutes],

@@ -63,8 +63,19 @@ export async function buildClinic(label) {
     .returning('*');
   await db('payout_lines').insert({ clinic_id: clinic.id, payout_id: payout.id, entry_id: entry.id, amount_cents: 1000 });
 
+  // assinatura: plano escolhido e uma fatura em aberto
+  const plan = await db('plans').where({ code: 'clinica' }).first();
+  const subscription = await db('subscriptions').where({ clinic_id: clinic.id }).first();
+  await db('subscriptions').where({ id: subscription.id }).update({ plan_id: plan.id });
+  const [invoice] = await db('invoices')
+    .insert({
+      clinic_id: clinic.id, subscription_id: subscription.id, plan_id: plan.id, amount_cents: plan.price_cents,
+      period_start: '2099-01-01', period_end: '2099-01-31', due_on: '2099-01-01',
+    })
+    .returning('*');
+
   return {
-    label, clinic, admin, rule, entry, payout, image, notification, secretary, target, d1, d2, patient, procedure, record, ...first, second,
+    label, clinic, admin, rule, plan, invoice, entry, payout, image, notification, secretary, target, d1, d2, patient, procedure, record, ...first, second,
     tokens: { admin: signAccessToken(admin), secretary: signAccessToken(secretary), dentist: signAccessToken(d1.user) },
   };
 }

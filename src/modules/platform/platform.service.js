@@ -1,12 +1,13 @@
 import db from '../../db/knex.js';
 import { conflict, notFound, tooManyRequests, unauthorized } from '../../utils/errors.js';
-import { toClinicDto, toPlatformAdminDto, toUserDto } from '../../utils/dto.js';
+import { toClinicDto, toPlatformAdminDto } from '../../utils/dto.js';
 import { escapeLike, pageResult, paginate } from '../../utils/pagination.js';
-import { slugify } from '../../utils/slug.js';
 import { loginThrottle } from '../../utils/loginThrottle.js';
 import { DUMMY_HASH, hashPassword, verifyPassword } from '../../services/password.js';
 import { signPlatformToken } from '../../services/tokens.js';
-import { sendVerificationSafely } from '../auth/auth.service.js';
+import { provisionClinic } from '../clinic/provision.js';
+import { BILLING_STATES, computeAccess } from '../billing/access.js';
+import { businessDate } from '../../utils/dates.js';
 
 // ---- administradores da plataforma ----
 
@@ -39,55 +40,91 @@ export async function platformLogin({ email, password, ip }) {
 
 // ---- clínicas ----
 
-async function uniqueSlug(trx, base) {
-  let slug = base;
-  let n = 1;
-  while (await trx('clinics').where({ slug }).first('id')) {
-    n += 1;
-    slug = `${base}-${n}`;
-  }
-  return slug;
-}
-
 /** Cria a clínica e o primeiro administrador, na mesma transação. O e-mail de verificação sai depois do commit. */
-export async function createClinic({ name, slug, document, plan, admin }) {
-  let result;
-  try {
-    result = await db.transaction(async (trx) => {
-      const [clinic] = await trx('clinics')
-        .insert({ name, slug: slug ?? (await uniqueSlug(trx, slugify(name))), document, ...(plan && { plan }) })
-        .returning('*');
-      const [user] = await trx('users')
-        .insert({ clinic_id: clinic.id, name: admin.name, email: admin.email, password_hash: await hashPassword(admin.password), role: 'admin' })
-        .returning('*');
-      return { clinic, user };
-    });
-  } catch (err) {
-    if (err.code === '23505') {
-      throw conflict(err.constraint === 'users_email_unique' ? 'E-mail do administrador já cadastrado.' : 'Identificador (slug) já em uso.');
-    }
-    throw err;
-  }
-  await sendVerificationSafely(result.user);
-  return { clinic: toClinicDto(result.clinic), admin: toUserDto(result.user) };
+export async function createClinic(input) {
+  const { clinic, admin } = await provisionClinic(input);
+  return { clinic, admin };
 }
 
-export async function listClinics({ status, q, ...paging }) {
+// Situação da assinatura de cada clínica, calculada das datas (mesma regra do painel da clínica).
+const SUBSCRIPTION_COLUMNS = [
+  'subscriptions.trial_ends_on', 'subscriptions.paid_until', 'subscriptions.courtesy_until', 'subscriptions.courtesy_indefinite',
+  'subscriptions.deletion_requested_at', 'plans.name as plan_name', 'plans.price_cents as plan_price_cents',
+];
+const withSubscription = (query) =>
+  query.join('subscriptions', 'subscriptions.clinic_id', 'clinics.id').leftJoin('plans', 'plans.id', 'subscriptions.plan_id');
+
+const toPlatformClinicDto = (row, today) => ({
+  ...toClinicDto(row),
+  subscription: {
+    ...computeAccess(row, today),
+    planName: row.plan_name,
+    deletionRequestedAt: row.deletion_requested_at,
+    templateCode: row.template_code,
+  },
+});
+
+export async function listClinics({ status, billing, q, ...paging }) {
   const filtered = () =>
     db('clinics').modify((query) => {
-      if (status) query.where({ status });
-      if (q) query.where((b) => b.whereILike('name', `%${escapeLike(q)}%`).orWhereILike('slug', `%${escapeLike(q)}%`));
+      if (status) query.where('clinics.status', status);
+      if (q) query.where((b) => b.whereILike('clinics.name', `%${escapeLike(q)}%`).orWhereILike('clinics.slug', `%${escapeLike(q)}%`));
     });
+  const today = businessDate();
+  const rowsQuery = () => withSubscription(filtered()).select('clinics.*', ...SUBSCRIPTION_COLUMNS).orderBy('clinics.name');
+
+  if (billing) {
+    // a situação da assinatura é calculada em código (não existe coluna para filtrar no SQL): filtra e pagina em memória
+    const dtos = (await rowsQuery()).map((row) => toPlatformClinicDto(row, today)).filter((c) => c.subscription.state === billing);
+    const { limit, offset } = paginate(paging);
+    return pageResult(dtos.slice(offset, offset + limit), dtos.length, paging);
+  }
   const [{ count }] = await filtered().count({ count: '*' });
   const { limit, offset } = paginate(paging);
-  const rows = await filtered().orderBy('name').limit(limit).offset(offset);
-  return pageResult(rows.map(toClinicDto), Number(count), paging);
+  const rows = await rowsQuery().limit(limit).offset(offset);
+  return pageResult(rows.map((row) => toPlatformClinicDto(row, today)), Number(count), paging);
 }
 
 export async function getClinic(id) {
-  const clinic = await db('clinics').where({ id }).first();
-  if (!clinic) throw notFound('Clínica');
-  return toClinicDto(clinic);
+  const row = await withSubscription(db('clinics').where('clinics.id', id)).first('clinics.*', ...SUBSCRIPTION_COLUMNS);
+  if (!row) throw notFound('Clínica');
+  return toPlatformClinicDto(row, businessDate());
+}
+
+/** Números para a tela inicial do backoffice. */
+export async function overview() {
+  const today = businessDate();
+  const rows = await withSubscription(db('clinics')).select('clinics.id', 'clinics.status', 'clinics.created_at', ...SUBSCRIPTION_COLUMNS);
+  const byState = Object.fromEntries(BILLING_STATES.map((state) => [state, 0]));
+  let mrrCents = 0;
+  let deletionRequests = 0;
+  let newLast7Days = 0;
+  let newLast30Days = 0;
+  const day = 86_400_000;
+  for (const row of rows) {
+    const { state } = computeAccess(row, today);
+    byState[state] += 1;
+    // receita mensal recorrente: clínicas com plano pago em dia ou em carência
+    if ((state === 'active' || state === 'past_due') && row.plan_price_cents) mrrCents += row.plan_price_cents;
+    if (row.deletion_requested_at) deletionRequests += 1;
+    const age = Date.now() - new Date(row.created_at).getTime();
+    if (age <= 7 * day) newLast7Days += 1;
+    if (age <= 30 * day) newLast30Days += 1;
+  }
+  const [open] = await db('invoices').where({ status: 'OPEN' }).select(
+    db.raw('count(*)::int AS open'),
+    db.raw('count(*) FILTER (WHERE reported_paid_at IS NOT NULL)::int AS awaiting'),
+    db.raw('coalesce(sum(amount_cents) FILTER (WHERE reported_paid_at IS NOT NULL), 0)::int AS awaiting_cents'),
+  );
+  return {
+    clinics: { total: rows.length, suspendedManually: rows.filter((r) => r.status === 'suspended').length, byState },
+    mrrCents,
+    awaitingConfirmation: { count: open.awaiting, amountCents: open.awaiting_cents },
+    openInvoices: open.open,
+    deletionRequests,
+    newLast7Days,
+    newLast30Days,
+  };
 }
 
 export async function updateClinic(id, changes) {

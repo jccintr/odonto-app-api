@@ -58,7 +58,16 @@ export function getAppointment(auth, id) {
   return withTenant(auth.clinicId, async (trx) => toAppointmentDto(await loadAppointment(trx, auth, id)));
 }
 
+// Não se agenda no passado (a secretária pode registrar um encaixe que começou há poucos minutos).
+const PAST_GRACE_MS = 5 * 60_000;
+const assertNotPast = (startsAt) => {
+  if (new Date(startsAt).getTime() < Date.now() - PAST_GRACE_MS) {
+    throw badRequest('Não é possível agendar em data e hora que já passaram.', { code: 'PAST_DATE' });
+  }
+};
+
 export async function createAppointment(auth, { patientId, dentistId, startsAt, endsAt, notes }) {
+  assertNotPast(startsAt);
   try {
     return await withTenant(auth.clinicId, async (trx) => {
       const own = await ownDentistId(trx, auth);
@@ -92,6 +101,9 @@ export async function updateAppointment(auth, id, changes) {
       const own = await ownDentistId(trx, auth);
       if (own && changes.dentistId && changes.dentistId !== own) throw forbidden('O dentista só agenda na própria agenda.');
       if (changes.dentistId) await assertActiveDentist(trx, changes.dentistId);
+
+      // remarcar para o passado não vale; manter o horário de um atendimento antigo (ex.: editar observações) continua permitido
+      if (changes.startsAt && new Date(changes.startsAt).getTime() !== current.starts_at.getTime()) assertNotPast(changes.startsAt);
 
       const duration = current.ends_at.getTime() - current.starts_at.getTime();
       const startsAt = changes.startsAt ? new Date(changes.startsAt) : current.starts_at;

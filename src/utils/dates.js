@@ -15,6 +15,19 @@ export function addMonths(dateString, months) {
   return `${target.getUTCFullYear()}-${pad(target.getUTCMonth() + 1)}-${pad(Math.min(day, lastDay))}`;
 }
 
+/** Soma dias a uma data 'AAAA-MM-DD' (pode ser negativo). */
+export function addDays(dateString, days) {
+  const [year, month, day] = dateString.split('-').map(Number);
+  const d = new Date(Date.UTC(year, month - 1, day + days));
+  return `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
+}
+
+/** Dias entre duas datas 'AAAA-MM-DD' (to - from). */
+export function daysBetween(from, to) {
+  const ms = (s) => Date.UTC(...s.split('-').map((v, i) => (i === 1 ? Number(v) - 1 : Number(v))));
+  return Math.round((ms(to) - ms(from)) / 86_400_000);
+}
+
 /** Divide um valor em centavos em n parcelas; os centavos que sobram vão uma a uma para as primeiras. */
 export function splitAmount(totalCents, parts) {
   const base = Math.floor(totalCents / parts);

@@ -55,6 +55,12 @@ export function sendVerificationEmail({ to, name, url, hours }) {
   });
 }
 
+/** Aviso interno para o dono da plataforma (clínica nova, "já paguei", pedido de exclusão). Sem OWNER_EMAIL, não envia. */
+export function sendOwnerNotice({ subject, text }) {
+  if (!config.ownerEmail) return { skipped: true };
+  return sendEmail({ to: config.ownerEmail, subject: `[OdontoApp] ${subject}`, html: `<pre style="font-family:inherit">${escapeHtml(text)}</pre>`, text });
+}
+
 export function sendPasswordResetEmail({ to, name, url, minutes }) {
   return sendEmail({
     to,
