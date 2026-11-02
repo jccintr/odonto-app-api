@@ -91,8 +91,16 @@ if (quiet) {
 } else {
   console.log(`\nAPI de demonstração no ar: ${url}   (documentação em ${url}/docs)\n`);
   console.log(`Clínica: ${DEMO.clinic}`);
-  for (const [label, u] of [['Administradora', DEMO.admin], ['Secretária', DEMO.secretary], ['Backoffice (plataforma)', DEMO.platform]]) console.log(`  ${label}: ${u.email}  /  ${u.password}`);
-  console.log('\nNo app web (pasta web): npm run dev  →  http://localhost:5173\nCtrl+C para encerrar (os dados de demonstração somem).\n');
+  const logins = [
+    ['Administradora', DEMO.admin], ['Secretária', DEMO.secretary],
+    ...DEMO.dentists.map((d) => [`Dentista (${d.name}${d.specialty ? `, ${d.specialty}` : ''})`, d]),
+    ['Backoffice (plataforma)', DEMO.platform],
+  ];
+  for (const [label, u] of logins) console.log(`  ${label}: ${u.email}  /  ${u.password}`);
+  console.log('\nPainel web (pasta web): npm run dev  →  http://localhost:5173  (administração e secretária)');
+  console.log('App do dentista (pasta mobile): entre com um dos dentistas acima.');
+  console.log('Backoffice (pasta backoffice): npm run dev  →  http://localhost:5174');
+  console.log('Ctrl+C para encerrar (os dados de demonstração somem).\n');
 }
 
 let closing = false;
