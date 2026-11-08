@@ -91,7 +91,7 @@ export const ACCESS = {
   'POST /api/budgets/:id/status': { access: ANY, params: { id: 'budget' }, scoped: 'resource', body: () => ({ status: 'approved' }) },
   'POST /api/budgets/:id/approvals': { access: ANY, params: { id: 'budget' }, scoped: 'resource', body: (f) => ({ itemIds: [f.item.id], discountCents: 0 }) },
   'POST /api/budgets/:id/items': { access: CLINICAL, params: { id: 'budget' }, scoped: 'resource', body: (f) => ({ procedureId: f.procedure.id }) },
-  'PATCH /api/budgets/:id/items/:itemId': { access: CLINICAL, params: { id: 'budget', itemId: 'item' }, scoped: 'resource', body: () => ({ priceCents: 1 }) },
+  'PATCH /api/budgets/:id/items/:itemId': { access: CLINICAL, params: { id: 'budget', itemId: 'item' }, scoped: 'resource', body: () => ({ tooth: 11 }) },
   'DELETE /api/budgets/:id/items/:itemId': { access: CLINICAL, params: { id: 'budget', itemId: 'item' }, scoped: 'resource' },
   'POST /api/budgets/:id/items/:itemId/cancel': { access: CLINICAL, params: { id: 'budget', itemId: 'item' }, scoped: 'resource' },
   // ---- financeiro ----

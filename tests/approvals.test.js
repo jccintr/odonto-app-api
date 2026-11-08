@@ -100,13 +100,14 @@ describe('POST /api/budgets/:id/approvals', () => {
     expect((await api().post(`/api/budgets/${b.id}/approvals`).set(strangerHeaders).send({ itemIds: [b.items[2].id] })).status).toBe(404);
   });
 
-  it('em tratamento ainda dá para ajustar o preço do que está só proposto, sem mexer no aprovado', async () => {
+  it('em tratamento ainda dá para ajustar o dente do que está só proposto, sem mexer no aprovado', async () => {
     const c = await setup();
     const b = await proposal(c);
     await approve(c, b, { itemIds: [b.items[0].id], discountCents: 1000 });
-    const res = await api().patch(`/api/budgets/${b.id}/items/${b.items[1].id}`).set(c.headers).send({ priceCents: 8000 });
+    const res = await api().patch(`/api/budgets/${b.id}/items/${b.items[1].id}`).set(c.headers).send({ tooth: 17 });
     expect(res.status).toBe(200);
-    expect(res.body).toMatchObject({ subtotalCents: 48000, discountCents: 1000 });
+    expect(res.body).toMatchObject({ discountCents: 1000 });
+    expect(res.body.items[1].tooth).toBe(17);
     expect(res.body.approvals[0]).toMatchObject({ subtotalCents: 20000, totalCents: 19000 });
   });
 

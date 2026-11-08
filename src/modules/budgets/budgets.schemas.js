@@ -18,8 +18,7 @@ const itemFields = {
   procedureId: uuidField,
   tooth: toothField.optional(),
   faces: facesField.optional(),
-  priceCents: centsField.optional(),
-};
+}; // o preço vem sempre da tabela de procedimentos da clínica: ninguém o altera no orçamento (a negociação é o desconto)
 const facesNeedTooth = { message: 'Informe o dente para indicar as faces.', path: ['faces'] };
 const itemSchema = z.object(itemFields).refine((item) => !item.faces || item.tooth, facesNeedTooth);
 
@@ -46,7 +45,7 @@ export const updateBudgetSchema = z
 export const addItemSchema = itemSchema;
 
 export const updateItemSchema = z
-  .object({ tooth: toothField.nullable(), faces: facesField.nullable(), priceCents: centsField })
+  .object({ tooth: toothField.nullable(), faces: facesField.nullable() })
   .partial()
   .refine((body) => Object.keys(body).length > 0, 'Informe ao menos um campo para alterar.');
 

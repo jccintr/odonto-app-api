@@ -120,7 +120,7 @@ it('percorre o sistema inteiro e todas as rotas respondem como a documentação 
   await step('incluir item B', api().post(`/api/budgets/${budget.id}/items`).set(admin).send({ procedureId: procedure.id, tooth: 26 }), 201);
   const withC = await step('incluir item C', api().post(`/api/budgets/${budget.id}/items`).set(admin).send({ procedureId: procedure.id, tooth: 36 }), 201);
   const [itemA, itemB, itemC] = withC.items;
-  await step('alterar item', api().patch(`/api/budgets/${budget.id}/items/${itemB.id}`).set(admin).send({ priceCents: 15000 }), 200);
+  await step('alterar item', api().patch(`/api/budgets/${budget.id}/items/${itemB.id}`).set(admin).send({ tooth: 27 }), 200);
   await step('remover item', api().delete(`/api/budgets/${budget.id}/items/${itemC.id}`).set(admin), 200);
   await step('aprovar orçamento', api().post(`/api/budgets/${budget.id}/status`).set(admin).send({ status: 'approved' }), 200);
   // o procedimento aprovado é executado num atendimento: o dentista inicia e conclui informando o item do orçamento
@@ -176,11 +176,11 @@ it('percorre o sistema inteiro e todas as rotas respondem como a documentação 
   const applied = await step('qual regra vale', api().get(`/api/payouts/rules/resolve?dentistId=${dentist.id}&procedureId=${procedure.id}`).set(admin), 200);
   expect(applied).toMatchObject({ source: 'dentist_procedure', type: 'fixed', fixedCents: 2500 });
   await step('remover regra', api().delete(`/api/payouts/rules/${exception.id}`).set(admin), 204);
-  // o procedimento realizado antes da configuração gerou lançamento com a regra do dentista (40%) sobre R$ 194,29:
-  // R$ 200,00 menos a parte do desconto (R$ 10,00 de um orçamento de R$ 350,00)
+  // o procedimento realizado antes da configuração gerou lançamento com a regra do dentista (40%) sobre R$ 195,00:
+  // R$ 200,00 menos a parte do desconto (R$ 10,00 de um orçamento de R$ 400,00)
   const lines = await step('lançamentos', api().get('/api/payouts/entries').set(admin), 200);
   expect(lines.data).toHaveLength(1);
-  expect(lines.data[0]).toMatchObject({ rule: { source: 'dentist', percent: 40 }, commissionCents: 7772 });
+  expect(lines.data[0]).toMatchObject({ rule: { source: 'dentist', percent: 40 }, commissionCents: 7800 });
   await step('saldos', api().get('/api/payouts/balances').set(admin), 200);
   const payout = await step('pagar repasse', api().post('/api/payouts').set(admin).send({ dentistId: dentist.id, method: 'pix', notes: 'Fechamento' }), 201);
   expect(payout.totalCents).toBe(lines.data[0].releasedCents);

@@ -22,22 +22,22 @@ const approved = async (c, body) => {
 };
 
 describe('POST /api/budgets', () => {
-  it('cria o orçamento com itens (preço padrão do procedimento ou informado) e calcula os totais', async () => {
+  it('cria o orçamento com itens (preço sempre o da tabela da clínica) e calcula os totais', async () => {
     const c = await setup();
     const res = await make(c, { discountCents: 5000, notes: 'Plano completo', items: [
       { procedureId: c.cleaning.id },
       { procedureId: c.filling.id, tooth: 16, faces: 'dom' },
-      { procedureId: c.canal.id, tooth: 26, priceCents: 55000 },
+      { procedureId: c.canal.id, tooth: 26, priceCents: 1 }, // o preço enviado é ignorado: vale o da tabela
     ] });
     expect(res.status).toBe(201);
     expect(res.body).toMatchObject({
-      status: 'open', notes: 'Plano completo', itemsCount: 3, subtotalCents: 90000, discountCents: 5000, totalCents: 85000, approvedAt: null,
+      status: 'open', notes: 'Plano completo', itemsCount: 3, subtotalCents: 95000, discountCents: 5000, totalCents: 90000, approvedAt: null,
       patient: { id: c.patient.id, name: 'Ana Lima' }, dentist: { id: c.dentist.dentist.id, name: 'Dr. Paulo' },
     });
     expect(res.body.items.map((i) => [i.procedure.name, i.tooth, i.faces, i.priceCents, i.status, i.position])).toEqual([
       ['Limpeza', null, null, 15000, 'pending', 1],
       ['Restauração', 16, 'MDO', 20000, 'pending', 2],
-      ['Canal', 26, null, 55000, 'pending', 3],
+      ['Canal', 26, null, 60000, 'pending', 3],
     ]);
   });
 
@@ -96,7 +96,7 @@ describe('POST /api/budgets', () => {
     const bad = [
       { items: [] }, { items: undefined }, { items: Array.from({ length: 101 }, () => ({ procedureId: c.cleaning.id })) },
       item({ tooth: 10 }), item({ tooth: 99 }), item({ tooth: 11.5 }), item({ tooth: '16' }), item({ faces: 'O' }), item({ tooth: 16, faces: 'X' }),
-      item({ priceCents: -1 }), item({ priceCents: 10.5 }), item({ procedureId: 'abc' }),
+      item({ procedureId: 'abc' }),
       { discountCents: -1 }, { discountCents: 1.5 }, { patientId: 'abc' }, { notes: 'x'.repeat(2001) },
     ];
     for (const extra of bad) expect((await make(c, extra)).status, JSON.stringify(extra).slice(0, 80)).toBe(400);
@@ -237,9 +237,9 @@ describe('itens do orçamento', () => {
     expect(added.body.items.at(-1)).toMatchObject({ position: 3, priceCents: 60000, tooth: 36, faces: 'O' });
 
     const target = added.body.items.at(-1);
-    const changed = await item(c.headers, b.id, target.id).send({ tooth: 37, faces: 'od', priceCents: 50000 });
-    expect(changed.body.items.at(-1)).toMatchObject({ tooth: 37, faces: 'DO', priceCents: 50000 });
-    expect(changed.body.subtotalCents).toBe(85000);
+    const changed = await item(c.headers, b.id, target.id).send({ tooth: 37, faces: 'od', priceCents: 1 });
+    expect(changed.body.items.at(-1)).toMatchObject({ tooth: 37, faces: 'DO', priceCents: 60000 });
+    expect(changed.body.subtotalCents).toBe(95000);
 
     const removed = await api().delete(`/api/budgets/${b.id}/items/${target.id}`).set(c.headers);
     expect(removed.status).toBe(200);
@@ -266,10 +266,9 @@ describe('itens do orçamento', () => {
     expect((await item(c.headers, b.id, withTooth.id).send({ tooth: null, faces: null })).body.items[1]).toMatchObject({ tooth: null, faces: null });
   });
 
-  it('desconto maior que o novo valor: 422 ao reduzir preço ou remover item', async () => {
+  it('desconto maior que o novo valor: 422 ao remover item', async () => {
     const c = await setup();
     const b = (await make(c, { discountCents: 30000 })).body;
-    expect((await item(c.headers, b.id, b.items[1].id).send({ priceCents: 1000 })).status).toBe(422);
     expect((await api().delete(`/api/budgets/${b.id}/items/${b.items[1].id}`).set(c.headers)).status).toBe(422);
     expect((await api().get(`/api/budgets/${b.id}`).set(c.headers)).body.itemsCount).toBe(2);
   });
@@ -279,7 +278,7 @@ describe('itens do orçamento', () => {
     const a = (await make(c)).body;
     const other = (await make(c)).body;
     const missing = '00000000-0000-4000-8000-000000000000';
-    expect((await item(c.headers, a.id, other.items[0].id).send({ priceCents: 1 })).status).toBe(404);
+    expect((await item(c.headers, a.id, other.items[0].id).send({ tooth: 11 })).status).toBe(404);
     expect((await api().delete(`/api/budgets/${a.id}/items/${missing}`).set(c.headers)).status).toBe(404);
     expect((await add(c.headers, a.id, { procedureId: missing })).status).toBe(404);
 
@@ -290,13 +289,13 @@ describe('itens do orçamento', () => {
     // em tratamento ainda se propõe procedimento novo, mas o que já foi aprovado não muda mais
     expect((await add(c.headers, a.id, { procedureId: c.cleaning.id })).status).toBe(201);
     const approved = a.items[0].id;
-    expect((await item(c.headers, a.id, approved).send({ priceCents: 1 })).body.code).toBe('ITEM_ALREADY_APPROVED');
+    expect((await item(c.headers, a.id, approved).send({ tooth: 11 })).body.code).toBe('ITEM_ALREADY_APPROVED');
     expect((await api().delete(`/api/budgets/${a.id}/items/${approved}`).set(c.headers)).body.code).toBe('ITEM_ALREADY_APPROVED');
     // recusado ou concluído: nada muda
     const rejected = (await make(c)).body;
     await api().post(`/api/budgets/${rejected.id}/status`).set(c.headers).send({ status: 'rejected' });
     expect((await add(c.headers, rejected.id, { procedureId: c.cleaning.id })).body.code).toBe('BUDGET_NOT_OPEN');
-    expect((await item(c.headers, rejected.id, rejected.items[0].id).send({ priceCents: 1 })).status).toBe(409);
+    expect((await item(c.headers, rejected.id, rejected.items[0].id).send({ tooth: 11 })).status).toBe(409);
     expect((await api().delete(`/api/budgets/${rejected.id}/items/${rejected.items[0].id}`).set(c.headers)).status).toBe(409);
   });
 
@@ -306,7 +305,7 @@ describe('itens do orçamento', () => {
     for (const bad of [{}, { procedureId: 'abc' }, { procedureId: c.cleaning.id, faces: 'O' }, { procedureId: c.cleaning.id, tooth: 10 }]) {
       expect((await add(c.headers, b.id, bad)).status).toBe(400);
     }
-    for (const bad of [{}, { tooth: 10 }, { faces: 'X' }, { priceCents: -5 }]) expect((await item(c.headers, b.id, b.items[0].id).send(bad)).status).toBe(400);
+    for (const bad of [{}, { tooth: 10 }, { faces: 'X' }, { priceCents: 5 }]) expect((await item(c.headers, b.id, b.items[0].id).send(bad)).status).toBe(400);
   });
 });
 

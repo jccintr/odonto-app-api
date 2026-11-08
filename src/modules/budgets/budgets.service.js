@@ -9,7 +9,7 @@ import { recordExecution } from '../payouts/payouts.accrual.js';
 
 // "completed" não é escolhido por ninguém: acontece sozinho quando não resta item pendente
 const TRANSITIONS = { open: ['approved', 'rejected'], rejected: ['open'], approved: [], completed: [] };
-const COLUMN = { discountCents: 'discount_cents', priceCents: 'price_cents' };
+const COLUMN = { discountCents: 'discount_cents' };
 const toColumns = (input) => Object.fromEntries(Object.entries(input).map(([key, value]) => [COLUMN[key] ?? key, value]));
 
 // ---- consultas ----
@@ -153,7 +153,7 @@ export function createBudget(auth, input) {
       procedure_id: item.procedureId,
       tooth: item.tooth,
       faces: item.faces,
-      price_cents: item.priceCents ?? procedures.get(item.procedureId).price_cents,
+      price_cents: procedures.get(item.procedureId).price_cents,
       position: index + 1,
     }));
     assertDiscount(items.reduce((sum, item) => sum + item.price_cents, 0), input.discountCents);
@@ -241,7 +241,7 @@ export function addItem(auth, id, input) {
     const [{ max }] = await trx('budget_items').where({ budget_id: id }).max({ max: 'position' });
     await trx('budget_items').insert({
       clinic_id: auth.clinicId, budget_id: id, procedure_id: input.procedureId, tooth: input.tooth, faces: input.faces,
-      price_cents: input.priceCents ?? procedure.price_cents, position: (max ?? 0) + 1,
+      price_cents: procedure.price_cents, position: (max ?? 0) + 1,
     });
     return detail(trx, auth, id);
   });
@@ -254,9 +254,8 @@ export function updateItem(auth, id, itemId, changes) {
     const item = await loadItem(trx, id, itemId);
     assertProposed(item);
 
-    const next = { tooth: item.tooth, faces: item.faces, price_cents: item.price_cents, ...toColumns(changes) };
+    const next = { tooth: item.tooth, faces: item.faces, ...toColumns(changes) };
     if (next.faces && !next.tooth) throw unprocessable('Informe o dente para indicar as faces.');
-    if (budget.status === 'open') assertDiscount(budget.subtotal - item.price_cents + next.price_cents, budget.discount_cents);
 
     await trx('budget_items').where({ id: itemId }).update({ ...next, updated_at: new Date() });
     return detail(trx, auth, id);

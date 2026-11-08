@@ -64,7 +64,7 @@ describe('especificação OpenAPI', () => {
 
     const detail = spec.paths['/api/budgets/{id}/items/{itemId}'].patch;
     expect(detail.parameters.map((p) => [p.name, p.in, p.required])).toEqual([['id', 'path', true], ['itemId', 'path', true]]);
-    expect(detail.requestBody.content['application/json'].schema.properties).toHaveProperty('priceCents');
+    expect(detail.requestBody.content['application/json'].schema.properties).toHaveProperty('tooth');
   });
 
   it('descreve quem pode chamar e os erros padrão de cada rota', () => {

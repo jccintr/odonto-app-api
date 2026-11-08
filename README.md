@@ -158,7 +158,7 @@ Listas paginadas: `?page=1&perPage=20` → `{ data, page, perPage, total, totalP
   Situações: `scheduled → confirmed → in_progress → attended`, ou `no_show` / `canceled` (finais; só antes de iniciar). O dentista **inicia** o
   atendimento e só então o conclui, com o prontuário. Quem não tem horário ainda não é atendido: veja **Adimplência** abaixo.
 - **Orçamentos:** cada item é um procedimento, opcionalmente com dente (numeração FDI: 11-48 permanentes e 51-85 de leite) e faces
-  (V, L, M, D, O). O preço do item é copiado do procedimento no momento (ou informado), então mudar a tabela de preços depois não altera
+  (V, L, M, D, O). O preço do item é copiado da tabela de procedimentos da clínica no momento (ninguém o altera no orçamento: a negociação é o desconto da aprovação), então mudar a tabela de preços depois não altera
   orçamentos antigos. Fluxo: `open → approved | rejected` (recusado pode reabrir); aprovado só avança executando os itens e vira
   `completed` sozinho quando não resta item pendente. Subtotal ignora itens cancelados; o total nunca fica negativo.
 - **Rodadas de aprovação:** o paciente não precisa aprovar tudo de uma vez. Cada vez que aprova procedimentos nasce uma rodada
