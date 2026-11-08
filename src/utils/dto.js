@@ -174,6 +174,7 @@ export const toToothRecordDto = (r) => ({
   notes: r.notes,
   recordedOn: r.recorded_on,
   recordedBy: r.recorded_by,
+  recordedByName: r.recorded_by_name ?? null,
   sourceItemId: r.source_item_id,
   createdAt: r.created_at,
 });

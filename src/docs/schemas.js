@@ -408,7 +408,7 @@ export const SCHEMAS = {
 
   MarcacaoDente: obj({
     id: uuid, tooth: int, faces: nstr, condition: enumOf(CONDITIONS), notes: nstr, recordedOn: date,
-    recordedBy: uuid, sourceItemId: { ...nuuid, description: 'Item de orçamento que gerou a marcação, quando foi automática.' }, createdAt: dateTime,
+    recordedBy: uuid, recordedByName: { ...nstr, description: 'Quem responde pela marcação: o dentista que executou o procedimento (automática) ou quem a marcou (manual).' }, sourceItemId: { ...nuuid, description: 'Item de orçamento que gerou a marcação, quando foi automática.' }, createdAt: dateTime,
   }),
   Odontograma: obj({
     patientId: uuid,

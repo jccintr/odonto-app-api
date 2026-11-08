@@ -41,6 +41,19 @@ describe('execução dos itens do orçamento (dentro do atendimento)', () => {
     expect(records[0]).toMatchObject({ tooth: 16, faces: 'DO', condition: 'restoration', source_item_id: b.items[1].id, recorded_by: c.dentist.user.id });
   });
 
+  it('o odontograma mostra quem responde pela marcação: o dentista que executou ou quem marcou à mão', async () => {
+    const c = await setup();
+    const b = await approvedBudget(c);
+    await perform(c, b, 1);
+    await db('tooth_records').where({ patient_id: c.patient.id }).update({ recorded_by: c.user.id }); // quem lançou não importa: vale o dentista que executou
+    const manual = await api().post(`/api/patients/${c.patient.id}/odontogram`).set(c.headers).send({ tooth: 18, condition: 'caries' });
+    expect(manual.body.recordedByName).toBe(c.user.name);
+
+    const teeth = (await api().get(`/api/patients/${c.patient.id}/odontogram`).set(c.headers)).body.teeth;
+    expect(teeth['16'][0]).toMatchObject({ sourceItemId: b.items[1].id, recordedByName: 'Dr. Paulo' });
+    expect(teeth['18'][0]).toMatchObject({ sourceItemId: null, recordedByName: c.user.name });
+  });
+
   it('sem dente ou sem condição no procedimento, não marca o odontograma', async () => {
     const c = await setup();
     const b = await approvedBudget(c);

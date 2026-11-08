@@ -31,10 +31,16 @@ async function plannedByTooth(trx, patientId) {
 export function getOdontogram(auth, patientId) {
   return withTenant(auth.clinicId, async (trx) => {
     await assertPatient(trx, patientId);
-    const rows = await trx('tooth_records')
-      .where({ patient_id: patientId })
-      .whereNull('removed_at')
-      .orderBy([{ column: 'tooth' }, { column: 'recorded_on' }, { column: 'created_at' }]);
+    // quem responde pela marcação: o dentista que executou o procedimento (automática) ou quem a marcou (manual)
+    const rows = await trx('tooth_records as t')
+      .leftJoin('users as recorder', 'recorder.id', 't.recorded_by')
+      .leftJoin('budget_items as item', 'item.id', 't.source_item_id')
+      .leftJoin('dentists as performer', 'performer.id', 'item.performed_by_dentist_id')
+      .leftJoin('users as performer_user', 'performer_user.id', 'performer.user_id')
+      .where({ 't.patient_id': patientId })
+      .whereNull('t.removed_at')
+      .orderBy([{ column: 't.tooth' }, { column: 't.recorded_on' }, { column: 't.created_at' }])
+      .select('t.*', trx.raw('coalesce(performer_user.name, recorder.name) AS recorded_by_name'));
     await recordAudit(trx, { clinicId: auth.clinicId, userId: auth.userId, entity: 'odontogram', entityId: patientId, action: 'read' });
 
     const teeth = {};
@@ -50,7 +56,8 @@ export function addRecord(auth, patientId, { tooth, faces, condition, notes, rec
       .insert({ clinic_id: auth.clinicId, patient_id: patientId, tooth, faces, condition, notes, recorded_on: recordedOn, recorded_by: auth.userId })
       .returning('*');
     await recordAudit(trx, { clinicId: auth.clinicId, userId: auth.userId, entity: 'tooth_record', entityId: row.id, action: 'create' });
-    return toToothRecordDto(row);
+    const author = await trx('users').where({ id: auth.userId }).first('name');
+    return toToothRecordDto({ ...row, recorded_by_name: author.name });
   });
 }
 
