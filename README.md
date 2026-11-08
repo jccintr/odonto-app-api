@@ -93,7 +93,7 @@ Banco e schema únicos. Toda tabela de dados de clínica tem `clinic_id` e **Row
 | PATCH | `/api/dentists/:id` | admin | CRO, especialidade, cor da agenda e % de repasse |
 | GET | `/api/procedures`, `/api/procedures/:id` | logado | Tabela de procedimentos e preços (filtros e paginação) |
 | POST, PATCH | `/api/procedures`, `/api/procedures/:id` | admin | Cadastrar e alterar (preço e custo em centavos; desativar em vez de excluir) |
-| GET | `/api/patients` | logado | Lista resumida (busca por nome, CPF ou telefone) |
+| GET | `/api/patients` | logado | Lista resumida (busca por nome, CPF ou telefone). **O telefone (do paciente e do responsável) vem `null` para o dentista**, que também não busca por ele |
 | GET | `/api/patients/:id` | logado | Ficha completa; **cada consulta é auditada** |
 | POST, PATCH | `/api/patients`, `/api/patients/:id` | logado | Cadastrar e alterar (arquivar com `active: false`; não há exclusão) |
 | GET | `/api/patients/:patientId/images[/:imageId]` | logado | Imagens e radiografias do paciente (link de download que expira; consulta auditada) |
@@ -102,17 +102,23 @@ Banco e schema únicos. Toda tabela de dados de clínica tem `clinic_id` e **Row
 | PATCH, DELETE | `/api/patients/:patientId/images/:imageId` | admin, dentista | Alterar dados ou remover (apaga o arquivo; o registro fica como removido) |
 | GET, POST | `/api/appointments` | logado | Agenda (filtros por período, dentista, paciente e situação) e agendamento |
 | GET, PATCH | `/api/appointments/:id` | logado | Consultar e remarcar |
-| POST | `/api/appointments/:id/status` | logado | Confirmar, atender, faltar ou cancelar |
+| POST | `/api/appointments/:id/status` | logado | Confirmar, faltar ou cancelar. **Iniciar (`in_progress`): só o dentista, e confere a adimplência do paciente (409 `PATIENT_BLOCKED`)**. **Atendido: só o dentista do atendimento, depois de iniciado, com `evolution` obrigatória**: procedimento(s) realizado(s) e os **dentes afetados** (ou boca toda), do catálogo e/ou de itens de orçamento a dar baixa; texto opcional |
+| GET | `/api/patients/:patientId/evolutions` | admin, dentista | Prontuário: evoluções clínicas do paciente (auditado; a secretária não lê) |
+| POST | `/api/patients/:patientId/evolutions/:id/addendum` | dentista autor | Retificar uma evolução (o registro original nunca muda; o banco só permite acrescentar) |
 | GET | `/api/budgets`, `/api/budgets/:id` | logado | Orçamentos (resumo na lista; com itens, subtotal e total no detalhe) |
 | POST, PATCH | `/api/budgets`, `/api/budgets/:id` | admin, dentista | Criar com itens (procedimento + dente + faces) e alterar desconto/observações |
-| POST, PATCH, DELETE | `/api/budgets/:id/items[/:itemId]` | admin, dentista | Incluir, alterar e remover itens (só com o orçamento em aberto) |
-| POST | `/api/budgets/:id/status` | logado | Aprovar, recusar ou reabrir (a secretária registra a decisão) |
-| POST | `/api/budgets/:id/items/:itemId/perform` | admin, dentista | Realizar o procedimento (marca o dente no odontograma automaticamente) |
-| POST | `/api/budgets/:id/items/:itemId/cancel` | admin, dentista | O paciente desistiu de um item aprovado |
+| POST, PATCH, DELETE | `/api/budgets/:id/items[/:itemId]` | admin, dentista | Incluir, alterar e remover itens (enquanto só propostos, com o orçamento em aberto ou em tratamento) |
+| POST | `/api/budgets/:id/status` | logado | Aprovar tudo de uma vez, recusar ou reabrir (a secretária registra a decisão) |
+| POST | `/api/budgets/:id/approvals` | logado | Rodada de aprovação: o paciente aprova alguns itens, com desconto próprio (pode haver várias rodadas) |
+| GET | `/api/worklist` | admin, secretária | Lista de trabalho da recepção: aprovados sem consulta, orçamentos sem resposta, inadimplentes com consulta |
+| GET | `/api/patients/:id/treatment-items` | logado | Procedimentos aprovados e a realizar do paciente, de todos os dentistas (sem valores) |
+| GET | `/api/patients/:id/standing` | admin, secretária | Situação financeira do paciente (bloqueado por inadimplência?) |
+| POST | `/api/patients/:id/block-release` | admin | Liberar paciente bloqueado, com motivo e por 1 a 30 dias (exceção auditada) |
+| POST | `/api/budgets/:id/items/:itemId/cancel` | admin, dentista | O paciente desistiu de um item (aprovado ou só proposto) |
 | GET | `/api/patients/:id/odontogram` | logado | Odontograma atual, agrupado por dente (leitura auditada) |
 | POST, DELETE | `/api/patients/:id/odontogram[/:recordId]` | admin, dentista | Marcar dente e remover marcação (remoção lógica) |
 | GET, POST | `/api/budgets/:id/payments` | admin, secretária | Resumo financeiro do orçamento e lançamento de parcela a receber ou recebimento na hora |
-| POST | `/api/budgets/:id/payment-plan` | admin, secretária | Gerar parcelas mensais com o saldo do orçamento |
+| POST | `/api/budgets/:id/payment-plan` | admin, secretária | Gerar parcelas mensais com o saldo da rodada de aprovação |
 | GET | `/api/payments`, `/api/payments/:id` | admin, secretária | Contas a receber (filtros por situação, forma, paciente, vencimento e `overdue`) |
 | PATCH | `/api/payments/:id` | admin, secretária | Alterar valor, vencimento e observações de parcela pendente |
 | POST | `/api/payments/:id/pay`, `/api/payments/:id/cancel` | admin, secretária | Receber e cancelar (estornar recebido: só admin) |
@@ -149,18 +155,31 @@ Listas paginadas: `?page=1&perPage=20` → `{ data, page, perPage, total, totalP
   (tabela somente de inserção: a aplicação não consegue alterar nem apagar; nas alterações guarda só os **nomes** dos campos, nunca os valores).
 - **Agenda:** o banco impede dois atendimentos ativos do mesmo dentista no mesmo horário (restrição de exclusão), então não há corrida entre
   duas secretárias agendando juntas; cancelar libera o horário. Admin e secretária veem tudo; o dentista só a própria agenda.
-  Situações: `scheduled → confirmed → attended`, ou `no_show` / `canceled` (finais).
+  Situações: `scheduled → confirmed → in_progress → attended`, ou `no_show` / `canceled` (finais; só antes de iniciar). O dentista **inicia** o
+  atendimento e só então o conclui, com o prontuário. Quem não tem horário ainda não é atendido: veja **Adimplência** abaixo.
 - **Orçamentos:** cada item é um procedimento, opcionalmente com dente (numeração FDI: 11-48 permanentes e 51-85 de leite) e faces
   (V, L, M, D, O). O preço do item é copiado do procedimento no momento (ou informado), então mudar a tabela de preços depois não altera
   orçamentos antigos. Fluxo: `open → approved | rejected` (recusado pode reabrir); aprovado só avança executando os itens e vira
   `completed` sozinho quando não resta item pendente. Subtotal ignora itens cancelados; o total nunca fica negativo.
-- **Execução:** `perform` guarda **quem executou** (`performedByDentistId`, base do repasse) e, se o item tem dente e o procedimento tem uma
-  `odontogramCondition`, cria a marcação no odontograma do paciente automaticamente.
+- **Rodadas de aprovação:** o paciente não precisa aprovar tudo de uma vez. Cada vez que aprova procedimentos nasce uma rodada
+  (`POST /api/budgets/:id/approvals`: itens escolhidos + desconto **daquela** rodada), sem mexer nas anteriores. Item sem rodada está
+  "proposto" (`approvalId: null`): ainda pode ser editado ou removido, mas não pode ser executado nem cobrado. O orçamento fica em tratamento
+  (`approved`) enquanto houver item pendente; o desconto do orçamento passa a ser a soma dos descontos das rodadas. Aprovar tudo por
+  `POST /status` continua valendo (uma rodada com todos os itens e o desconto do orçamento).
+- **Execução:** não existe baixa direta no orçamento. O item aprovado é executado **dentro do atendimento** (o dentista informa os itens ao
+  concluir, com a evolução no prontuário). Isso guarda **quem executou** (`performedByDentistId`, base do repasse) e, se o item tem dente e o
+  procedimento tem uma `odontogramCondition`, cria a marcação no odontograma. O repasse usa o desconto da rodada do item. Qualquer dentista da clínica executa o que o paciente aprovou,
+  mesmo em orçamento de um colega.
+- **Adimplência:** paciente com parcela pendente vencida há mais dias que a tolerância da clínica (`overdueGraceDays`, padrão 7) fica
+  **bloqueado**: não ganha novos agendamentos e o dentista não inicia os atendimentos marcados (409 `PATIENT_BLOCKED`; o dentista não vê valores).
+  Cancelar, remarcar e receber continuam permitidos. Pagar ou renegociar o vencimento desbloqueia sozinho; o administrador abre uma exceção com
+  motivo (`POST /api/patients/:id/block-release`, 1 a 30 dias, auditada).
 - **Odontograma:** histórico de marcações por dente. Nada é apagado de verdade: remover marca a linha como removida (quem e quando) e registra auditoria.
   A secretária consulta (ficha impressa), mas só admin e dentista marcam. O dentista só alcança os próprios orçamentos.
 - **Pagamentos:** cada linha é uma parcela a receber (`pending`), um recebimento (`paid`, com forma e data) ou um cancelamento. Só se lança
-  pagamento em orçamento aprovado ou concluído, e o total lançado (pendente + pago) não passa do total do orçamento (a linha do orçamento é
-  travada na transação, então dois lançamentos simultâneos não estouram o saldo). Valores em centavos. Cancelar devolve o saldo.
+  pagamento em orçamento aprovado ou concluído, e o total lançado (pendente + pago) não passa do total da **rodada de aprovação** (`approvalId`;
+  opcional quando há uma só, `APPROVAL_REQUIRED` quando há várias). A linha do orçamento é travada na transação, então dois lançamentos
+  simultâneos não estouram o saldo. Valores em centavos. Cancelar devolve o saldo.
   Parcelas mensais mantêm o mesmo dia de cada mês (dia 31 vira o último dia do mês) e os centavos que sobram vão nas primeiras parcelas.
   "Vencida" = pendente com vencimento antes de hoje no fuso da clínica (`TIMEZONE`, padrão America/Sao_Paulo). Todas as mudanças são auditadas.
   O dentista não acessa o financeiro.
@@ -199,7 +218,7 @@ descontar custo e taxa de cartão). Tudo é configurável por clínica e **só o
   (`PATCH /api/dentists/:id`) > **% padrão da clínica**. Regra pode ser `percent` ou `fixed` (valor por procedimento realizado).
   `GET /api/payouts/rules/resolve` mostra qual vale.
 - **Base de cálculo:** preço do item, com a sua parte do desconto do orçamento (proporcional ao preço), menos o custo (se a clínica desconta, nunca acima do valor cobrado).
-- **Lançamento:** ao realizar o procedimento (`perform`) nasce um lançamento para quem **executou**, com a regra e a comissão **congeladas**.
+- **Lançamento:** ao executar o procedimento no atendimento nasce um lançamento para quem **executou**, com a regra e a comissão **congeladas**.
   Mudar configuração ou regras vale só para os próximos (como nos sistemas do mercado, não há cálculo retroativo). Lançamentos e linhas de fechamento são somente de inserção.
 - **Saldo** = liberado (até a data) menos o já repassado. Pagamento do paciente estornado depois do repasse deixa o saldo negativo, que é descontado no próximo fechamento.
 - **Fechamento** (`POST /api/payouts`): paga o saldo do dentista até `until` (para fechar o mês, use o último dia). `422 NOTHING_TO_PAY` se não houver saldo;

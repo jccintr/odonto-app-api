@@ -110,7 +110,7 @@ export const DOCS = {
     summary: 'Confirmar que conferi os preços de exemplo', status: 200, response: ref('Onboarding'),
     description: 'Marca o passo "conferir os preços". Os preços do modelo são só exemplos de mercado: a clínica deve ajustá-los em Procedimentos.',
   },
-  'PATCH /api/clinic': { summary: 'Alterar minha clínica', status: 200, response: ref('Clinica'), description: 'Nome e documento. Plano e situação só a plataforma altera.' },
+  'PATCH /api/clinic': { summary: 'Alterar minha clínica', status: 200, response: ref('Clinica'), description: 'Nome, documento, `overdueGraceDays` (tolerância de atraso, de 0 a 60 dias; padrão 7) e `cashDiscountPercent` (desconto sugerido para pagamento à vista, de 0 a 50%; padrão 0). Plano e situação só a plataforma altera.' },
   'GET /api/users': { summary: 'Listar usuários', status: 200, response: page('Usuario'), description: 'Só da própria clínica, em ordem de nome.' },
   'POST /api/users': {
     summary: 'Criar usuário', status: 201, response: ref('Usuario'),
@@ -149,6 +149,25 @@ export const DOCS = {
     summary: 'Listar pacientes', status: 200, response: page('PacienteResumo'),
     description: 'Formato resumido. `q` busca por nome, CPF ou telefone.',
   },
+  'GET /api/worklist': {
+    summary: 'Lista de trabalho da recepção', status: 200, response: ref('ListaDeTrabalho'),
+    description: 'Administração e secretária. Três listas, cada uma com até 50 itens: `approvedWithoutAppointment` (procedimento aprovado e nenhuma consulta marcada), `budgetsAwaitingAnswer` (orçamentos em aberto, os mais antigos primeiro) e `overdueWithAppointments` (paciente em atraso além da tolerância com consulta marcada; só a próxima de cada um).',
+  },
+  'GET /api/patients/:id/treatment-items': {
+    summary: 'Procedimentos a realizar do paciente', status: 200, response: ref('ItensATratar'),
+    description: 'Itens que o paciente aprovou e que ainda não foram executados, somando os orçamentos de **todos** os dentistas da clínica, sem valores. Qualquer dentista pode executar qualquer um deles no atendimento. Do mais antigo para o mais novo.',
+    errors: { 404: E404_REF },
+  },
+  'GET /api/patients/:id/standing': {
+    summary: 'Situação financeira (adimplência)', status: 200, response: ref('Adimplencia'),
+    description: 'Administração e secretária. O paciente fica **bloqueado** quando tem parcela pendente vencida há mais dias que `overdueGraceDays` da clínica: não ganha novos atendimentos nem inicia os marcados. Pagar ou renegociar o vencimento desbloqueia sozinho.',
+    errors: { 404: E404_REF },
+  },
+  'POST /api/patients/:id/block-release': {
+    summary: 'Liberar paciente bloqueado (exceção)', status: 201, response: ref('Adimplencia'),
+    description: 'Só o administrador. Exige `reason` e vale por `days` dias (1 a 30; padrão 1). Fica registrada na auditoria e não pode ser editada.',
+    errors: { 404: E404_REF, 409: 'O paciente não está bloqueado (`NOT_BLOCKED`).' },
+  },
   'GET /api/patients/:id': { summary: 'Ficha do paciente', status: 200, response: ref('Paciente'), description: 'Ficha completa. **Cada consulta é registrada na auditoria.**' },
   'POST /api/patients': {
     summary: 'Cadastrar paciente', status: 201, response: ref('Paciente'),
@@ -160,7 +179,7 @@ export const DOCS = {
     description: 'Campos opcionais; `null` limpa um campo; `address` altera só as partes enviadas. Não existe exclusão: arquive com `active: false`.',
     errors: { 409: 'CPF já cadastrado nesta clínica.' },
   },
-  'GET /api/patients/:patientId/odontogram': { summary: 'Odontograma do paciente', status: 200, response: ref('Odontograma'), description: 'Marcações atuais agrupadas por dente. Cada leitura é registrada na auditoria.' },
+  'GET /api/patients/:patientId/odontogram': { summary: 'Odontograma do paciente', status: 200, response: ref('Odontograma'), description: 'Marcações atuais agrupadas por dente, mais a camada `planned` (procedimentos com dente ainda não executados, aprovados ou só propostos, sem valores). Cada leitura é registrada na auditoria.' },
   'POST /api/patients/:patientId/odontogram': { summary: 'Marcar dente', status: 201, response: ref('MarcacaoDente'), description: 'Marcação manual. Dente na numeração FDI; faces V, L, M, D, O.' },
   'DELETE /api/patients/:patientId/odontogram/:recordId': { summary: 'Remover marcação', status: 204, description: 'Remoção lógica: a marcação sai do odontograma, mas fica registrada (quem removeu e quando).' },
 
@@ -202,19 +221,30 @@ export const DOCS = {
     summary: 'Agendar', status: 201, response: ref('Atendimento'),
     description: 'Datas em ISO 8601 com fuso. Para o perfil dentista, `dentistId` é opcional (vale a própria agenda). **Não aceita data e hora que já passaram** (400 `PAST_DATE`; um encaixe de até 5 minutos atrás é tolerado).',
     errors: {
-      404: E404_REF, 409: 'Horário indisponível (`SLOT_TAKEN`): o dentista já tem atendimento ativo neste período.',
+      404: E404_REF, 409: 'Horário indisponível: o dentista já tem atendimento ativo neste período (`SLOT_TAKEN`) ou o paciente já tem atendimento ativo no período, com este ou outro dentista (`PATIENT_BUSY`), ou o paciente está bloqueado por inadimplência (`PATIENT_BLOCKED`).',
       422: 'Paciente arquivado ou dentista desativado.',
     },
   },
   'PATCH /api/appointments/:id': {
     summary: 'Remarcar ou editar', status: 200, response: ref('Atendimento'),
     description: 'Se só o início mudar, a duração é mantida. Mudar horário ou dentista volta o atendimento para `scheduled`. Só atendimentos agendados ou confirmados podem ser alterados. Remarcar para uma data que já passou responde 400 `PAST_DATE`.',
-    errors: { 409: 'Horário indisponível (`SLOT_TAKEN`) ou atendimento já finalizado.', 422: 'Dentista de destino desativado.' },
+    errors: { 409: 'Horário indisponível (`SLOT_TAKEN` ou `PATIENT_BUSY`) ou atendimento já finalizado.', 422: 'Dentista de destino desativado.' },
   },
   'POST /api/appointments/:id/status': {
     summary: 'Mudar a situação do atendimento', status: 200, response: ref('Atendimento'),
-    description: 'Fluxo: `scheduled` → `confirmed` → `attended`; também `no_show` e `canceled` (com `reason` opcional). Situações finais não mudam mais; cancelar libera o horário.',
-    errors: { 409: 'Transição inválida (`INVALID_TRANSITION`).' },
+    description: 'Fluxo: `scheduled` → `confirmed` → `in_progress` → `attended`; também `no_show` e `canceled` (com `reason` opcional; só antes de iniciar). Situações finais não mudam mais; cancelar libera o horário. **`in_progress` (iniciar o atendimento) é só do dentista e confere a adimplência do paciente** (409 `PATIENT_BLOCKED` se ele tem parcela vencida além da tolerância da clínica, sem liberação do administrador). **`attended` só vale para o dentista do atendimento, depois de iniciado, e exige `evolution`**: ao menos um procedimento realizado e **onde** (os dentes afetados em `teeth`, numeração FDI, ou `wholeMouth: true` para a boca toda), por procedimentos do catálogo (`procedures`) e/ou itens de orçamento aprovado a dar baixa (`budgetItems`, o mesmo efeito de executar o item; o item que já tem dente usa o dele). `description` é um texto opcional. O registro vai para o prontuário do paciente e não pode ser alterado depois.',
+    errors: { 403: 'Iniciar e marcar como atendido são só do dentista.', 409: 'Transição inválida (`INVALID_TRANSITION`), paciente bloqueado por inadimplência (`PATIENT_BLOCKED`) ou item de orçamento que não está pendente/aprovado.', 422: 'Procedimento desativado.' },
+  },
+
+  // ---------------- prontuário ----------------
+  'GET /api/patients/:patientId/evolutions': {
+    summary: 'Prontuário: evoluções do paciente', status: 200, response: page('Evolucao'),
+    description: 'Da mais recente para a mais antiga, cada uma com procedimentos e retificações. **Só administração e dentistas** (a secretária não lê o conteúdo clínico). Cada leitura é auditada.',
+  },
+  'POST /api/patients/:patientId/evolutions/:id/addendum': {
+    summary: 'Retificar uma evolução', status: 201, response: ref('Retificacao'),
+    description: 'O registro original não muda: o dentista que o fez acrescenta uma correção, que aparece junto dele.',
+    errors: { 403: 'Só o dentista autor da evolução pode retificá-la.', 404: E404_REF },
   },
 
   // ---------------- orçamentos ----------------
@@ -234,45 +264,45 @@ export const DOCS = {
   },
   'POST /api/budgets/:id/status': {
     summary: 'Aprovar, recusar ou reabrir', status: 200, response: ref('Orcamento'),
-    description: 'Todos os perfis registram a decisão. `open` → `approved` ou `rejected`; `rejected` → `open`. Aprovado não volta. O estado `completed` é automático e não é aceito aqui.',
+    description: 'Todos os perfis registram a decisão. `open` → `approved` ou `rejected`; `rejected` → `open`. Aprovar aqui aprova **todos** os itens de uma vez, numa única rodada, com o desconto do orçamento; para aprovar só parte, ou aprovar mais depois, use `POST /api/budgets/:id/approvals`. Aprovado não volta. O estado `completed` é automático e não é aceito aqui.',
     errors: { 409: 'Transição inválida (`INVALID_TRANSITION`).', 422: 'Inclua ao menos um procedimento para aprovar.' },
   },
+  'POST /api/budgets/:id/approvals': {
+    summary: 'Registrar uma rodada de aprovação', status: 201, response: ref('Orcamento'),
+    description: 'O paciente aprovou alguns procedimentos (agora ou em outro dia). Informe os `itemIds` e o `discountCents` combinado **para esses itens**: cada rodada tem desconto e parcelas próprios e não mexe nas anteriores. Os itens passam a "a realizar" (podem ser executados nos atendimentos e cobrados) e o orçamento fica em tratamento. Todos os perfis registram a aprovação.',
+    errors: { 404: 'Orçamento ou item não encontrado.', 409: 'Orçamento recusado/concluído (`BUDGET_NOT_OPEN`), item não pendente (`ITEM_NOT_PENDING`) ou já aprovado (`ITEM_ALREADY_APPROVED`).', 422: 'Desconto maior que o valor dos itens escolhidos.' },
+  },
   'POST /api/budgets/:id/items': {
-    summary: 'Incluir item', status: 201, response: ref('Orcamento'), description: 'Só com o orçamento em aberto. Devolve o orçamento atualizado.',
+    summary: 'Incluir item', status: 201, response: ref('Orcamento'), description: 'Com o orçamento em aberto ou em tratamento; o item novo fica só proposto até o paciente aprovar. Devolve o orçamento atualizado.',
     errors: { 404: 'Orçamento ou procedimento não encontrado.', 409: 'Orçamento fora de "aberto" (`BUDGET_NOT_OPEN`).', 422: 'Procedimento desativado.' },
   },
   'PATCH /api/budgets/:id/items/:itemId': {
-    summary: 'Alterar item', status: 200, response: ref('Orcamento'), description: 'Só com o orçamento em aberto. `tooth` e `faces` aceitam `null`.',
+    summary: 'Alterar item', status: 200, response: ref('Orcamento'), description: 'Só itens ainda propostos (não aprovados), com o orçamento em aberto ou em tratamento. `tooth` e `faces` aceitam `null`.',
     errors: { 409: 'Orçamento fora de "aberto" (`BUDGET_NOT_OPEN`).', 422: 'Faces sem dente, ou desconto maior que o novo valor.' },
   },
   'DELETE /api/budgets/:id/items/:itemId': {
-    summary: 'Remover item', status: 200, response: ref('Orcamento'), description: 'Só com o orçamento em aberto. Devolve o orçamento atualizado.',
+    summary: 'Remover item', status: 200, response: ref('Orcamento'), description: 'Só itens ainda propostos (não aprovados). Devolve o orçamento atualizado.',
     errors: { 409: 'Orçamento fora de "aberto" (`BUDGET_NOT_OPEN`).', 422: 'O desconto ficaria maior que o valor do orçamento.' },
-  },
-  'POST /api/budgets/:id/items/:itemId/perform': {
-    summary: 'Realizar o procedimento', status: 200, response: ref('Orcamento'),
-    description: 'Só com o orçamento aprovado. Registra **quem executou** (base do repasse): o dentista do orçamento, ou `dentistId` (o dentista só executa como ele mesmo). Se o item tem dente e o procedimento tem `odontogramCondition`, o dente é marcado automaticamente. Quando não resta item pendente, o orçamento vira `completed`.',
-    errors: { 409: 'Orçamento não aprovado (`BUDGET_NOT_APPROVED`) ou item já finalizado (`ITEM_NOT_PENDING`).', 422: 'Dentista executor desativado.' },
   },
   'POST /api/budgets/:id/items/:itemId/cancel': {
     summary: 'Cancelar item (o paciente desistiu)', status: 200, response: ref('Orcamento'),
-    description: 'Só com o orçamento aprovado e o item pendente. O item sai do subtotal.',
+    description: 'Só com o orçamento em tratamento e o item pendente (aprovado ou só proposto). O item sai do subtotal.',
     errors: { 409: 'Orçamento não aprovado (`BUDGET_NOT_APPROVED`) ou item já finalizado (`ITEM_NOT_PENDING`).' },
   },
 
   // ---------------- pagamentos ----------------
   'GET /api/budgets/:id/payments': {
     summary: 'Pagamentos do orçamento', status: 200, response: ref('PagamentosDoOrcamento'),
-    description: 'Lançamentos por vencimento e resumo financeiro (total, lançado, recebido, a receber, vencido e saldo sem lançamento). Cancelados não contam.',
+    description: 'Lançamentos por vencimento, resumo financeiro (total aprovado, lançado, recebido, a receber, vencido e saldo sem lançamento) e o saldo de cada rodada de aprovação. Cancelados não contam.',
   },
   'POST /api/budgets/:id/payments': {
     summary: 'Lançar pagamento', status: 201, response: ref('Pagamento'),
-    description: 'Parcela a receber (informe `dueDate`) **ou** recebimento na hora (informe `method` e `paidAt`). Só em orçamento aprovado ou concluído; o total lançado nunca passa do total do orçamento.',
-    errors: { 409: 'Orçamento não aprovado (`BUDGET_NOT_APPROVED`).', 422: 'Valor acima do saldo (`EXCEEDS_BALANCE`, com `balanceCents`).' },
+    description: 'Parcela a receber (informe `dueDate`) **ou** recebimento na hora (informe `method` e `paidAt`). Só em orçamento aprovado ou concluído; o total lançado nunca passa do total da **rodada de aprovação** (`approvalId`, opcional quando o orçamento tem uma só).',
+    errors: { 409: 'Orçamento não aprovado (`BUDGET_NOT_APPROVED`).', 422: 'Valor acima do saldo da rodada (`EXCEEDS_BALANCE`, com `balanceCents`) ou rodada não informada (`APPROVAL_REQUIRED`).' },
   },
   'POST /api/budgets/:id/payment-plan': {
     summary: 'Gerar parcelas mensais', status: 201, response: array('Pagamento'),
-    description: 'Divide o saldo do orçamento (ou `amountCents`) em parcelas mensais no mesmo dia de cada mês (dia 31 vira o último dia do mês); os centavos que sobram vão nas primeiras parcelas.',
+    description: 'Divide o saldo da rodada de aprovação (`approvalId`, opcional quando só há uma) ou `amountCents` em parcelas mensais no mesmo dia de cada mês (dia 31 vira o último dia do mês); os centavos que sobram vão nas primeiras parcelas.',
     errors: { 409: 'Orçamento não aprovado (`BUDGET_NOT_APPROVED`).', 422: 'Sem saldo (`NO_BALANCE`), valor acima do saldo (`EXCEEDS_BALANCE`) ou menor que o número de parcelas.' },
   },
   'GET /api/payments': {

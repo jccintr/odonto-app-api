@@ -69,7 +69,7 @@ describe('GET /api/reports/monthly', () => {
         { procedure: expect.objectContaining({ name: 'Limpeza' }), count: 1, producedCents: 10000 },
       ],
     });
-    expect(r.appointments).toEqual({ total: 7, scheduled: 1, confirmed: 0, attended: 4, no_show: 1, canceled: 1, attendanceRate: 0.8, noShowRate: 0.2 });
+    expect(r.appointments).toEqual({ total: 7, scheduled: 1, confirmed: 0, in_progress: 0, attended: 4, no_show: 1, canceled: 1, attendanceRate: 0.8, noShowRate: 0.2 });
     expect(r.budgets).toEqual({ createdCount: 3, rejectedCount: 1, approvedCount: 1, approvedCents: 30000, conversionRate: 0.333 });
     expect(r.newPatients).toBe(1);
     expect(r.payouts).toEqual({ commissionCents: 9000, paidCents: 6000, balanceAtEndCents: 3000 });

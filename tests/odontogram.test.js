@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import db from '../src/db/knex.js';
 import { withTenant } from '../src/db/tenant.js';
-import { api, createClinic, createDentist, createPatient, setupUser } from './helpers/factories.js';
+import { api, createClinic, createDentist, createPatient, createProcedure, setupUser } from './helpers/factories.js';
 
 async function setup() {
   const admin = await setupUser();
@@ -10,6 +10,45 @@ async function setup() {
 }
 const url = (c, suffix = '') => `/api/patients/${c.patient.id}/odontogram${suffix}`;
 const mark = (headers, c, body) => api().post(url(c)).set(headers).send(body);
+
+describe('camada planejado', () => {
+  async function setup() {
+    const admin = await setupUser();
+    return {
+      ...admin, patient: await createPatient(admin.clinic, { name: 'Ana Lima' }), dentist: await createDentist(admin.clinic, { name: 'Dr. Paulo' }),
+      procedure: await createProcedure(admin.clinic, { name: 'Restauração', price_cents: 20000 }),
+    };
+  }
+  async function budget(c, items, { approve = [], status } = {}) {
+    const res = await api().post('/api/budgets').set(c.headers).send({ patientId: c.patient.id, dentistId: c.dentist.dentist.id, items });
+    if (approve.length) await api().post(`/api/budgets/${res.body.id}/approvals`).set(c.headers).send({ itemIds: approve.map((i) => res.body.items[i].id) });
+    if (status) await api().post(`/api/budgets/${res.body.id}/status`).set(c.headers).send({ status });
+    return res.body;
+  }
+
+  it('mostra por dente o que está proposto e o que já foi aprovado, sem valores; itens sem dente ficam de fora', async () => {
+    const c = await setup();
+    const b = await budget(c, [
+      { procedureId: c.procedure.id, tooth: 16, faces: 'O' }, { procedureId: c.procedure.id, tooth: 16 }, { procedureId: c.procedure.id, tooth: 26 }, { procedureId: c.procedure.id },
+    ], { approve: [0] });
+    const { planned } = (await api().get(url(c)).set(c.headers)).body;
+    expect(Object.keys(planned)).toEqual(['16', '26']);
+    expect(planned['16']).toEqual([
+      { itemId: b.items[0].id, procedure: { id: c.procedure.id, name: expect.any(String) }, faces: 'O', approved: true },
+      { itemId: b.items[1].id, procedure: { id: c.procedure.id, name: expect.any(String) }, faces: null, approved: false },
+    ]);
+    expect(planned['26'][0].approved).toBe(false);
+    expect(JSON.stringify(planned)).not.toContain('price');
+  });
+
+  it('recusado, executado ou cancelado saem do planejado', async () => {
+    const c = await setup();
+    await budget(c, [{ procedureId: c.procedure.id, tooth: 11 }], { status: 'rejected' });
+    const b = await budget(c, [{ procedureId: c.procedure.id, tooth: 12 }, { procedureId: c.procedure.id, tooth: 13 }], { approve: [0, 1] });
+    await api().post(`/api/budgets/${b.id}/items/${b.items[1].id}/cancel`).set(c.headers);
+    expect(Object.keys((await api().get(url(c)).set(c.headers)).body.planned)).toEqual(['12']);
+  });
+});
 
 describe('POST /api/patients/:id/odontogram', () => {
   it('registra uma marcação (faces na ordem canônica; data padrão = hoje) e audita', async () => {
@@ -60,7 +99,7 @@ describe('GET /api/patients/:id/odontogram', () => {
     const secretary = await setupUser({ role: 'secretary', clinic: c.clinic });
     const res = await api().get(url(c)).set(secretary.headers);
     expect(res.status).toBe(200);
-    expect(res.body).toEqual({ patientId: c.patient.id, teeth: {} });
+    expect(res.body).toEqual({ patientId: c.patient.id, teeth: {}, planned: {} });
 
     const audit = await db('audit_log').where({ entity: 'odontogram', entity_id: c.patient.id });
     expect(audit).toHaveLength(1);

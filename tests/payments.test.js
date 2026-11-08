@@ -208,7 +208,7 @@ describe('GET /api/budgets/:id/payments', () => {
     const c = await setup();
     const b = await approvedBudget(c);
     const res = await api().get(`/api/budgets/${b.id}/payments`).set(c.headers);
-    expect(res.body).toEqual({ summary: { totalCents: 100000, scheduledCents: 0, paidCents: 0, pendingCents: 0, overdueCents: 0, balanceCents: 100000 }, data: [] });
+    expect(res.body).toEqual({ summary: { totalCents: 100000, scheduledCents: 0, paidCents: 0, pendingCents: 0, overdueCents: 0, balanceCents: 100000 }, approvals: [expect.objectContaining({ totalCents: 100000, scheduledCents: 0, paidCents: 0, balanceCents: 100000 })], data: [] });
 
     const foreign = await setup();
     expect((await api().get(`/api/budgets/${b.id}/payments`).set(foreign.headers)).status).toBe(404);

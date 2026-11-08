@@ -7,6 +7,9 @@ export async function ownDentistId(trx, auth) {
   return (await trx('dentists').where({ user_id: auth.userId }).first('id')).id;
 }
 
+/** Telefone do paciente é da secretária e da administração: o dentista nunca o recebe nem o usa em buscas. */
+export const canSeeContact = (auth) => auth.role !== 'dentist';
+
 /** Garante que o dentista existe na clínica, ainda tem perfil dentist e não foi desativado. */
 export async function assertActiveDentist(trx, dentistId) {
   const dentist = await trx('dentists')

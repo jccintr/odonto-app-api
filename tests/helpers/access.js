@@ -54,6 +54,10 @@ export const ACCESS = {
   // ---- pacientes e odontograma ----
   'GET /api/patients': { access: ANY, noRefs: true },
   'GET /api/patients/:id': { access: ANY, params: { id: 'patient' } },
+  'GET /api/worklist': { access: FINANCE, noRefs: true },
+  'GET /api/patients/:id/treatment-items': { access: ANY, params: { id: 'patient' } },
+  'GET /api/patients/:id/standing': { access: FINANCE, params: { id: 'patient' } },
+  'POST /api/patients/:id/block-release': { access: ADMIN, params: { id: 'patient' }, body: () => ({ reason: 'Urgência', days: 1 }) },
   'POST /api/patients': { access: ANY, noRefs: true, body: () => ({ name: 'Paciente Novo' }) },
   'PATCH /api/patients/:id': { access: ANY, params: { id: 'patient' }, body: () => ({ notes: 'obs' }) },
   'GET /api/patients/:patientId/odontogram': { access: ANY, params: { patientId: 'patient' } },
@@ -65,6 +69,8 @@ export const ACCESS = {
   'GET /api/patients/:patientId/images/:imageId': { access: ANY, params: { patientId: 'patient', imageId: 'image' } },
   'PATCH /api/patients/:patientId/images/:imageId': { access: CLINICAL, params: { patientId: 'patient', imageId: 'image' }, body: () => ({ notes: 'obs' }) },
   'DELETE /api/patients/:patientId/images/:imageId': { access: CLINICAL, params: { patientId: 'patient', imageId: 'image' } },
+  'GET /api/patients/:patientId/evolutions': { access: CLINICAL, params: { patientId: 'patient' } },
+  'POST /api/patients/:patientId/evolutions/:id/addendum': { access: ['dentist'], params: { patientId: 'patient', id: 'evolution' }, body: () => ({ description: 'Retificação de teste' }) },
   // ---- agenda ----
   'GET /api/appointments': { access: ANY, noRefs: true },
   'GET /api/appointments/:id': { access: ANY, params: { id: 'appointment' }, scoped: 'resource' },
@@ -83,10 +89,10 @@ export const ACCESS = {
   },
   'PATCH /api/budgets/:id': { access: CLINICAL, params: { id: 'budget' }, scoped: 'resource', body: () => ({ notes: 'obs' }) },
   'POST /api/budgets/:id/status': { access: ANY, params: { id: 'budget' }, scoped: 'resource', body: () => ({ status: 'approved' }) },
+  'POST /api/budgets/:id/approvals': { access: ANY, params: { id: 'budget' }, scoped: 'resource', body: (f) => ({ itemIds: [f.item.id], discountCents: 0 }) },
   'POST /api/budgets/:id/items': { access: CLINICAL, params: { id: 'budget' }, scoped: 'resource', body: (f) => ({ procedureId: f.procedure.id }) },
   'PATCH /api/budgets/:id/items/:itemId': { access: CLINICAL, params: { id: 'budget', itemId: 'item' }, scoped: 'resource', body: () => ({ priceCents: 1 }) },
   'DELETE /api/budgets/:id/items/:itemId': { access: CLINICAL, params: { id: 'budget', itemId: 'item' }, scoped: 'resource' },
-  'POST /api/budgets/:id/items/:itemId/perform': { access: CLINICAL, params: { id: 'budget', itemId: 'item' }, scoped: 'resource', body: () => ({}) },
   'POST /api/budgets/:id/items/:itemId/cancel': { access: CLINICAL, params: { id: 'budget', itemId: 'item' }, scoped: 'resource' },
   // ---- financeiro ----
   'GET /api/budgets/:id/payments': { access: FINANCE, params: { id: 'budget' } },
@@ -145,6 +151,6 @@ export const ACCESS = {
 export const RESOURCE = {
   target: (f) => f.target.id, dentist: (f) => f.d1.dentist.id, procedure: (f) => f.procedure.id, patient: (f) => f.patient.id,
   budget: (f) => f.budget.id, item: (f) => f.item.id, appointment: (f) => f.appointment.id, payment: (f) => f.payment.id,
-  record: (f) => f.record.id, clinic: (f) => f.clinic.id, rule: (f) => f.rule.id, image: (f) => f.image.id, payout: (f) => f.payout.id, invoice: (f) => f.invoice.id, plan: (f) => f.plan.id,
+  record: (f) => f.record.id, evolution: (f) => f.evolution.id, clinic: (f) => f.clinic.id, rule: (f) => f.rule.id, image: (f) => f.image.id, payout: (f) => f.payout.id, invoice: (f) => f.invoice.id, plan: (f) => f.plan.id,
 };
 

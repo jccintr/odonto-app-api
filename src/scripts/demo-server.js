@@ -48,13 +48,17 @@ await db.migrate.latest();
 
 export const DEMO = {
   clinic: 'Clínica Sorriso',
-  admin: { email: 'admin@sorriso.test', password: 'senha-do-admin-123', name: 'Dra. Ana Prado' },
-  platform: { email: 'plataforma@sorriso.test', password: 'senha-da-plataforma-1', name: 'Dono da Plataforma' }, // só para o app backoffice
-  secretary: { email: 'secretaria@sorriso.test', password: 'senha-da-secretaria-1', name: 'Maria Souza' },
+  admin: { email: 'admin@sorriso.test', password: 'admin123', name: 'Dra. Ana Prado' },
+  platform: { email: 'plataforma@sorriso.test', password: 'plataforma123', name: 'Dono da Plataforma' }, // só para o app backoffice
+  secretary: { email: 'secretaria@sorriso.test', password: 'secretaria123', name: 'Maria Souza' },
   dentists: [
-    { email: 'paulo@sorriso.test', password: 'senha-do-paulo-12345', name: 'Dr. Paulo Lima', color: '#0f766e', cro: 'CRO-MG 12345', specialty: 'Clínico geral', payout: 40 },
-    { email: 'bia@sorriso.test', password: 'senha-da-bia-1234567', name: 'Dra. Bia Costa', color: '#7c3aed', cro: 'CRO-MG 23456', specialty: 'Ortodontia', payout: 35 },
+   { email: 'paulo@sorriso.test', password: 'dentista123', name: 'Dr. Paulo Lima', color: '#0f766e', cro: 'CRO-MG 12345', specialty: 'Clínico geral', payout: 40 },
+   { email: 'bia@sorriso.test', password: 'dentista123', name: 'Dra. Bia Costa', color: '#7c3aed', cro: 'CRO-MG 23456', specialty: 'Ortodontia', payout: 35 },
+   { email: 'rafael@sorriso.test', password: 'dentista123', name: 'Dr. Rafael Mendes', color: '#2563eb', cro: 'CRO-MG 34567', specialty: 'Implantodontia', payout: 45 },
+   { email: 'camila@sorriso.test', password: 'dentista123', name: 'Dra. Camila Rocha', color: '#db2777', cro: 'CRO-MG 45678', specialty: 'Endodontia', payout: 38 },
+  
   ],
+  
 };
 
 await db('platform_admins').insert({ name: DEMO.platform.name, email: DEMO.platform.email, password_hash: await hashPassword(DEMO.platform.password) });
@@ -81,7 +85,26 @@ const patients = [
   { name: 'Ana Lima', cpf: '52998224725', phone: '35999990001', email: 'ana.lima@exemplo.test', birth_date: '1990-05-17', contact_consent: true },
   { name: 'Carlos Souza', cpf: '11144477735', phone: '35999990002', email: 'carlos@exemplo.test', birth_date: '1984-11-02', contact_consent: true },
   { name: 'Marta Ferreira', phone: '35999990003', birth_date: '1972-03-28', contact_consent: false },
+  { name: 'João Pedro Almeida', cpf: '39053344705', phone: '35999990004', email: 'joao.almeida@exemplo.test', birth_date: '1995-08-12', contact_consent: true },
+  { name: 'Fernanda Costa', cpf: '86488597691', phone: '35999990005', email: 'fernanda.costa@exemplo.test', birth_date: '1988-01-25', contact_consent: true },
+  { name: 'Ricardo Oliveira', cpf: '12345678909', phone: '35999990006', email: 'ricardo.oliveira@exemplo.test', birth_date: '1979-06-30', contact_consent: false },
+  { name: 'Juliana Santos', phone: '35999990007', email: 'juliana.santos@exemplo.test', birth_date: '1992-09-14', contact_consent: true },
+  { name: 'Pedro Henrique Silva', cpf: '98765432100', phone: '35999990008', birth_date: '1986-12-03', contact_consent: true },
+  { name: 'Camila Rodrigues', cpf: '45678912345', phone: '35999990009', email: 'camila.rodrigues@exemplo.test', birth_date: '1998-04-21', contact_consent: false },
+  { name: 'Lucas Mendes', cpf: '32165498700', phone: '35999990010', email: 'lucas.mendes@exemplo.test', birth_date: '1991-07-08', contact_consent: true },
+  { name: 'Beatriz Carvalho', phone: '35999990011', birth_date: '1983-10-19', contact_consent: true },
+  { name: 'Gabriel Martins', cpf: '65498732111', phone: '35999990012', email: 'gabriel.martins@exemplo.test', birth_date: '1975-02-27', contact_consent: false },
+  { name: 'Larissa Pereira', cpf: '78912345680', phone: '35999990013', email: 'larissa.pereira@exemplo.test', birth_date: '1996-11-05', contact_consent: true },
+  { name: 'Thiago Barbosa', cpf: '14725836900', phone: '35999990014', birth_date: '1989-03-16', contact_consent: true },
+  { name: 'Isabela Nunes', cpf: '25836914722', phone: '35999990015', email: 'isabela.nunes@exemplo.test', birth_date: '1994-08-29', contact_consent: false },
+  { name: 'Rafael Dias', phone: '35999990016', email: 'rafael.dias@exemplo.test', birth_date: '1981-05-11', contact_consent: true },
+  { name: 'Patrícia Gomes', cpf: '36914725833', phone: '35999990017', email: 'patricia.gomes@exemplo.test', birth_date: '1977-12-22', contact_consent: true },
+  { name: 'Bruno Azevedo', cpf: '74185296300', phone: '35999990018', birth_date: '1993-01-07', contact_consent: false },
+  { name: 'Amanda Vieira', cpf: '85296374155', phone: '35999990019', email: 'amanda.vieira@exemplo.test', birth_date: '1987-06-18', contact_consent: true },
+  { name: 'Felipe Rocha', cpf: '96385274166', phone: '35999990020', email: 'felipe.rocha@exemplo.test', birth_date: '1990-09-03', contact_consent: true },
+  { name: 'Joyce', cpf: '96385274167', phone: '35999990021', email: 'joyce@exemplo.test', birth_date: '2000-09-03', contact_consent: true },
 ];
+
 for (const p of patients) await db('patients').insert({ clinic_id: clinic.id, ...p });
 
 const { server, stop } = await start();

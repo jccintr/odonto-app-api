@@ -9,7 +9,10 @@ export function getClinic(clinicId) {
 
 export function updateClinic(clinicId, changes) {
   return withTenant(clinicId, async (trx) => {
-    const [clinic] = await trx('clinics').update({ ...changes, updated_at: new Date() }).returning('*');
+    const { overdueGraceDays, cashDiscountPercent, ...rest } = changes;
+    const [clinic] = await trx('clinics')
+      .update({ ...rest, ...(overdueGraceDays !== undefined && { overdue_grace_days: overdueGraceDays }), ...(cashDiscountPercent !== undefined && { cash_discount_percent: cashDiscountPercent }), updated_at: new Date() })
+      .returning('*');
     return toClinicDto(clinic);
   });
 }

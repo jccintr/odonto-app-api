@@ -97,6 +97,19 @@ it('percorre o sistema inteiro e todas as rotas respondem como a documentação 
   await step('remarcar', api().patch(`/api/appointments/${appointment.id}`).set(admin).send({ notes: 'Trazer exames' }), 200);
   await step('confirmar atendimento', api().post(`/api/appointments/${appointment.id}/status`).set(admin).send({ status: 'confirmed' }), 200);
 
+  // ---- prontuário: o dentista atende outro horário e registra o que fez (a secretária não lê o prontuário) ----
+  const dentistLogin = await step('login do dentista', api().post('/api/auth/login').send({ email: 'paulo@sorriso.test', password: 'senha-do-paulo-1' }), 200);
+  const asDentist = bearer(dentistLogin.accessToken);
+  const visit = await step('agendar outro horário', api().post('/api/appointments').set(admin).send({
+    patientId: patient.id, dentistId: dentist.id, startsAt: '2099-02-01T16:00:00.000Z', endsAt: '2099-02-01T17:00:00.000Z',
+  }), 201);
+  await step('iniciar atendimento', api().post(`/api/appointments/${visit.id}/status`).set(asDentist).send({ status: 'in_progress' }), 200);
+  await step('marcar como atendido sem evolução', api().post(`/api/appointments/${visit.id}/status`).set(asDentist).send({ status: 'attended' }), 400);
+  await step('marcar como atendido', api().post(`/api/appointments/${visit.id}/status`).set(asDentist).send({ status: 'attended', evolution: { description: 'Limpeza e orientação de higiene.', procedures: [{ procedureId: procedure.id, teeth: [11, 21] }] } }), 200);
+  const prontuario = await step('consultar prontuário', api().get(`/api/patients/${patient.id}/evolutions`).set(asDentist), 200);
+  expect(prontuario.data[0]).toMatchObject({ appointmentId: visit.id, description: 'Limpeza e orientação de higiene.' });
+  await step('retificar evolução', api().post(`/api/patients/${patient.id}/evolutions/${prontuario.data[0].id}/addendum`).set(asDentist).send({ description: 'Faltou citar o uso de fio dental.' }), 201);
+
   // ---- orçamento ----
   const budget = await step('criar orçamento', api().post('/api/budgets').set(admin).send({
     patientId: patient.id, dentistId: dentist.id, items: [{ procedureId: procedure.id, tooth: 16, faces: 'OD' }],
@@ -110,15 +123,40 @@ it('percorre o sistema inteiro e todas as rotas respondem como a documentação 
   await step('alterar item', api().patch(`/api/budgets/${budget.id}/items/${itemB.id}`).set(admin).send({ priceCents: 15000 }), 200);
   await step('remover item', api().delete(`/api/budgets/${budget.id}/items/${itemC.id}`).set(admin), 200);
   await step('aprovar orçamento', api().post(`/api/budgets/${budget.id}/status`).set(admin).send({ status: 'approved' }), 200);
-  const performed = await step('realizar procedimento', api().post(`/api/budgets/${budget.id}/items/${itemA.id}/perform`).set(admin), 200);
+  // o procedimento aprovado é executado num atendimento: o dentista inicia e conclui informando o item do orçamento
+  const next = await step('agendar a execução', api().post('/api/appointments').set(admin).send({
+    patientId: patient.id, dentistId: dentist.id, startsAt: '2099-02-02T16:00:00.000Z', endsAt: '2099-02-02T17:00:00.000Z',
+  }), 201);
+  await step('iniciar a execução', api().post(`/api/appointments/${next.id}/status`).set(asDentist).send({ status: 'in_progress' }), 200);
+  await step('concluir a execução', api().post(`/api/appointments/${next.id}/status`).set(asDentist).send({ status: 'attended', evolution: { budgetItems: [{ itemId: itemA.id }] } }), 200);
+  const performed = await step('orçamento após a execução', api().get(`/api/budgets/${budget.id}`).set(admin), 200);
   expect(performed.items[0].performedByDentistId).toBe(dentist.id);
   const done = await step('cancelar item', api().post(`/api/budgets/${budget.id}/items/${itemB.id}/cancel`).set(admin), 200);
   expect(done.status).toBe('completed');
   const odontogram = await step('odontograma marcado pelo procedimento', api().get(`/api/patients/${patient.id}/odontogram`).set(admin), 200);
   expect(odontogram.teeth['16'][0]).toMatchObject({ condition: 'restoration', faces: 'DO' });
 
+  // ---- segunda rodada de aprovação: o paciente aprova outro procedimento depois, com desconto próprio ----
+  const extra = await step('orçamento complementar', api().post('/api/budgets').set(admin).send({
+    patientId: patient.id, dentistId: dentist.id, items: [{ procedureId: procedure.id, tooth: 46 }, { procedureId: procedure.id, tooth: 47 }],
+  }), 201);
+  const round = await step('aprovar só um procedimento (rodada)', api().post(`/api/budgets/${extra.id}/approvals`).set(admin).send({ itemIds: [extra.items[0].id], discountCents: 500, notes: 'Combinado na recepção' }), 201);
+  expect(round.approvals).toHaveLength(1);
+  expect(round.items[1].approvalId).toBeNull();
+  const toDo = await step('procedimentos a realizar do paciente', api().get(`/api/patients/${patient.id}/treatment-items`).set(asDentist), 200);
+  expect(toDo.data.map((i) => i.itemId)).toEqual([extra.items[0].id]);
+
   // ---- pagamentos (total do orçamento: 20.000 - 1.000 = 19.000) ----
-  await step('lançar parcela', api().post(`/api/budgets/${budget.id}/payments`).set(admin).send({ amountCents: 5000, dueDate: '2099-03-10' }), 201);
+  await step('lançar parcela', api().post(`/api/budgets/${budget.id}/payments`).set(admin).send({ amountCents: 5000, dueDate: '2020-03-10' }), 201);
+  // parcela vencida além da tolerância: o paciente fica bloqueado até regularizar ou o administrador liberar
+  const work = await step('lista de trabalho da recepção', api().get('/api/worklist').set(admin), 200);
+  expect(work.overdueWithAppointments).toEqual([expect.objectContaining({ patient: expect.objectContaining({ id: patient.id }), overdueCents: 5000, blocked: true })]);
+  const blocked = await step('situação financeira (bloqueado)', api().get(`/api/patients/${patient.id}/standing`).set(admin), 200);
+  expect(blocked).toMatchObject({ blocked: true, overdueCount: 1, overdueCents: 5000, graceDays: 7 });
+  await step('agendar paciente bloqueado', api().post('/api/appointments').set(admin).send({ patientId: patient.id, dentistId: dentist.id, startsAt: '2099-02-03T16:00:00.000Z', endsAt: '2099-02-03T17:00:00.000Z' }), 409);
+  const released = await step('liberar bloqueio', api().post(`/api/patients/${patient.id}/block-release`).set(admin).send({ reason: 'Urgência: dor aguda', days: 2 }), 201);
+  expect(released).toMatchObject({ blocked: false, overdue: true, releaseReason: 'Urgência: dor aguda' });
+  await step('alterar tolerância da clínica', api().patch('/api/clinic').set(admin).send({ overdueGraceDays: 10, cashDiscountPercent: 5 }), 200);
   const plan = await step('gerar parcelas', api().post(`/api/budgets/${budget.id}/payment-plan`).set(admin).send({ installments: 2, firstDueDate: '2099-04-10' }), 201);
   expect(plan.map((p) => p.amountCents)).toEqual([7000, 7000]);
   const financial = await step('pagamentos do orçamento', api().get(`/api/budgets/${budget.id}/payments`).set(admin), 200);

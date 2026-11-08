@@ -1,8 +1,9 @@
 import { z } from '../../config/zod.js';
 import { isoDateTime, optionalText, uuidField } from '../../utils/fields.js';
 import { paginationSchema } from '../../utils/pagination.js';
+import { evolutionInput } from '../evolutions/evolutions.schemas.js';
 
-export const STATUSES = ['scheduled', 'confirmed', 'attended', 'no_show', 'canceled'];
+export const STATUSES = ['scheduled', 'confirmed', 'in_progress', 'attended', 'no_show', 'canceled'];
 const statusField = z.enum(STATUSES, { error: 'Situação inválida.' });
 
 export const listAppointmentsQuery = z.object({
@@ -35,7 +36,12 @@ export const updateAppointmentSchema = z
   .partial()
   .refine((body) => Object.keys(body).length > 0, 'Informe ao menos um campo para alterar.');
 
-export const changeStatusSchema = z.object({
-  status: statusField,
-  reason: optionalText(240, 'Motivo').optional(),
-});
+export const changeStatusSchema = z
+  .object({
+    status: statusField,
+    reason: optionalText(240, 'Motivo').optional(),
+    evolution: evolutionInput.optional(),
+  })
+  // marcar como atendido exige registrar o que foi feito; nas demais situações não há evolução
+  .refine((body) => body.status !== 'attended' || body.evolution, { message: 'Informe o que foi feito no atendimento.', path: ['evolution'] })
+  .refine((body) => body.status === 'attended' || !body.evolution, { message: 'A evolução só vale ao marcar como atendido.', path: ['evolution'] });

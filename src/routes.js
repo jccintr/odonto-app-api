@@ -4,6 +4,7 @@ import appointmentsRoutes from './modules/appointments/appointments.routes.js';
 import authRoutes from './modules/auth/auth.routes.js';
 import clinicRoutes from './modules/clinic/clinic.routes.js';
 import dentistsRoutes from './modules/dentists/dentists.routes.js';
+import evolutionsRoutes from './modules/evolutions/evolutions.routes.js';
 import imagesRoutes from './modules/images/images.routes.js';
 import legalRoutes from './modules/legal/legal.routes.js';
 import notificationsRoutes from './modules/notifications/notifications.routes.js';
@@ -17,6 +18,9 @@ import platformRoutes from './modules/platform/platform.routes.js';
 import proceduresRoutes from './modules/procedures/procedures.routes.js';
 import billingRoutes from './modules/billing/billing.routes.js';
 import budgetsRoutes from './modules/budgets/budgets.routes.js';
+import treatmentRoutes from './modules/budgets/treatment.routes.js';
+import worklistRoutes from './modules/worklist/worklist.routes.js';
+import standingRoutes from './modules/standing/standing.routes.js';
 import signupRoutes from './modules/signup/signup.routes.js';
 import usersRoutes from './modules/users/users.routes.js';
 
@@ -35,6 +39,10 @@ export const MOUNTS = [
   ['/dentists', dentistsRoutes],
   ['/patients/:patientId/odontogram', odontogramRoutes],
   ['/patients/:patientId/images', imagesRoutes],
+  ['/patients/:patientId/evolutions', evolutionsRoutes],
+  ['/worklist', worklistRoutes],
+  ['/patients/:id', standingRoutes],
+  ['/patients/:id', treatmentRoutes],
   ['/patients', patientsRoutes],
   ['/procedures', proceduresRoutes],
   ['/appointments', appointmentsRoutes],

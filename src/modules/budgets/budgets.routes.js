@@ -3,7 +3,7 @@ import { validate } from '../../middlewares/validate.js';
 import { authenticate, requireRole } from '../../middlewares/auth.js';
 import * as service from './budgets.service.js';
 import {
-  addItemSchema, budgetParams, changeStatusSchema, createBudgetSchema, itemParams, listBudgetsQuery, performItemSchema,
+  addItemSchema, approveItemsSchema, budgetParams, changeStatusSchema, createBudgetSchema, itemParams, listBudgetsQuery,
   updateBudgetSchema, updateItemSchema,
 } from './budgets.schemas.js';
 
@@ -28,6 +28,9 @@ router.patch('/:id', clinical, validate({ params: budgetParams, body: updateBudg
 router.post('/:id/status', validate({ params: budgetParams, body: changeStatusSchema }), async (req, res) => {
   res.json(await service.changeStatus(req.auth, req.valid.params.id, req.valid.body));
 });
+router.post('/:id/approvals', validate({ params: budgetParams, body: approveItemsSchema }), async (req, res) => {
+  res.status(201).json(await service.approveItems(req.auth, req.valid.params.id, req.valid.body));
+});
 
 router.post('/:id/items', clinical, validate({ params: budgetParams, body: addItemSchema }), async (req, res) => {
   res.status(201).json(await service.addItem(req.auth, req.valid.params.id, req.valid.body));
@@ -37,9 +40,6 @@ router.patch('/:id/items/:itemId', clinical, validate({ params: itemParams, body
 });
 router.delete('/:id/items/:itemId', clinical, validate({ params: itemParams }), async (req, res) => {
   res.json(await service.removeItem(req.auth, req.valid.params.id, req.valid.params.itemId));
-});
-router.post('/:id/items/:itemId/perform', clinical, validate({ params: itemParams, body: performItemSchema }), async (req, res) => {
-  res.json(await service.performItem(req.auth, req.valid.params.id, req.valid.params.itemId, req.valid.body));
 });
 router.post('/:id/items/:itemId/cancel', clinical, validate({ params: itemParams }), async (req, res) => {
   res.json(await service.cancelItem(req.auth, req.valid.params.id, req.valid.params.itemId));

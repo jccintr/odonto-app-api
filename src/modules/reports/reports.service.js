@@ -60,7 +60,7 @@ async function production(trx, range) {
 
 async function appointments(trx, range) {
   const rows = await trx('appointments').whereRaw(...between('starts_at', range)).groupBy('status').select('status').count({ count: '*' });
-  const by = Object.fromEntries(['scheduled', 'confirmed', 'attended', 'no_show', 'canceled'].map((s) => [s, Number(rows.find((r) => r.status === s)?.count ?? 0)]));
+  const by = Object.fromEntries(['scheduled', 'confirmed', 'in_progress', 'attended', 'no_show', 'canceled'].map((s) => [s, Number(rows.find((r) => r.status === s)?.count ?? 0)]));
   const finished = by.attended + by.no_show;
   return { total: sum(Object.values(by).map((n) => ({ n })), 'n'), ...by, attendanceRate: rate(by.attended, finished), noShowRate: rate(by.no_show, finished) };
 }

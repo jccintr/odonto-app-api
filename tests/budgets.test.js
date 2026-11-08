@@ -274,7 +274,7 @@ describe('itens do orçamento', () => {
     expect((await api().get(`/api/budgets/${b.id}`).set(c.headers)).body.itemsCount).toBe(2);
   });
 
-  it('só em orçamento aberto (409); item de outro orçamento ou inexistente: 404; secretária: 403', async () => {
+  it('só enquanto proposto (409 se já aprovado); item de outro orçamento ou inexistente: 404; secretária: 403', async () => {
     const c = await setup();
     const a = (await make(c)).body;
     const other = (await make(c)).body;
@@ -287,9 +287,17 @@ describe('itens do orçamento', () => {
     expect((await add(secretary.headers, a.id, { procedureId: c.cleaning.id })).status).toBe(403);
 
     await api().post(`/api/budgets/${a.id}/status`).set(c.headers).send({ status: 'approved' });
-    expect((await add(c.headers, a.id, { procedureId: c.cleaning.id })).body.code).toBe('BUDGET_NOT_OPEN');
-    expect((await item(c.headers, a.id, a.items[0].id).send({ priceCents: 1 })).status).toBe(409);
-    expect((await api().delete(`/api/budgets/${a.id}/items/${a.items[0].id}`).set(c.headers)).status).toBe(409);
+    // em tratamento ainda se propõe procedimento novo, mas o que já foi aprovado não muda mais
+    expect((await add(c.headers, a.id, { procedureId: c.cleaning.id })).status).toBe(201);
+    const approved = a.items[0].id;
+    expect((await item(c.headers, a.id, approved).send({ priceCents: 1 })).body.code).toBe('ITEM_ALREADY_APPROVED');
+    expect((await api().delete(`/api/budgets/${a.id}/items/${approved}`).set(c.headers)).body.code).toBe('ITEM_ALREADY_APPROVED');
+    // recusado ou concluído: nada muda
+    const rejected = (await make(c)).body;
+    await api().post(`/api/budgets/${rejected.id}/status`).set(c.headers).send({ status: 'rejected' });
+    expect((await add(c.headers, rejected.id, { procedureId: c.cleaning.id })).body.code).toBe('BUDGET_NOT_OPEN');
+    expect((await item(c.headers, rejected.id, rejected.items[0].id).send({ priceCents: 1 })).status).toBe(409);
+    expect((await api().delete(`/api/budgets/${rejected.id}/items/${rejected.items[0].id}`).set(c.headers)).status).toBe(409);
   });
 
   it('valida o corpo (400)', async () => {

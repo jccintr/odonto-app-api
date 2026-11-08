@@ -18,6 +18,8 @@ export const toClinicDto = (c) => ({
   document: c.document,
   plan: c.plan,
   status: c.status,
+  overdueGraceDays: c.overdue_grace_days,
+  cashDiscountPercent: c.cash_discount_percent,
   createdAt: c.created_at,
   updatedAt: c.updated_at,
 });
@@ -50,16 +52,17 @@ export const toProcedureDto = (p) => ({
   updatedAt: p.updated_at,
 });
 
-export const toPatientDto = (p) => ({
+// Telefone é dado de contato: o perfil dentista não o recebe (quem fala com o paciente é a secretária); vem null.
+export const toPatientDto = (p, { contact = true } = {}) => ({
   id: p.id,
   name: p.name,
   cpf: p.cpf,
   birthDate: p.birth_date,
-  phone: p.phone,
+  phone: contact ? p.phone : null,
   email: p.email,
   address: { zip: p.zip, street: p.street, number: p.number, complement: p.complement, district: p.district, city: p.city, state: p.state },
   guardianName: p.guardian_name,
-  guardianPhone: p.guardian_phone,
+  guardianPhone: contact ? p.guardian_phone : null,
   anamnesis: p.anamnesis,
   notes: p.notes,
   contactConsent: p.contact_consent,
@@ -70,21 +73,37 @@ export const toPatientDto = (p) => ({
 });
 
 // listas não expõem anamnese nem endereço: esses dados só saem na consulta da ficha (que é auditada)
-export const toPatientSummaryDto = (p) => ({
-  id: p.id, name: p.name, cpf: p.cpf, phone: p.phone, birthDate: p.birth_date, active: p.active,
+export const toPatientSummaryDto = (p, { contact = true } = {}) => ({
+  id: p.id, name: p.name, cpf: p.cpf, phone: contact ? p.phone : null, birthDate: p.birth_date, active: p.active,
 });
 
-export const toAppointmentDto = (a) => ({
+export const toAppointmentDto = (a, { contact = true } = {}) => ({
   id: a.id,
-  patient: { id: a.patient_id, name: a.patient_name, phone: a.patient_phone },
+  patient: { id: a.patient_id, name: a.patient_name, phone: contact ? a.patient_phone : null },
   dentist: { id: a.dentist_id, name: a.dentist_name, color: a.dentist_color },
   startsAt: a.starts_at,
   endsAt: a.ends_at,
   status: a.status,
+  startedAt: a.started_at,
   notes: a.notes,
   canceledReason: a.canceled_reason,
   createdAt: a.created_at,
   updatedAt: a.updated_at,
+});
+
+export const toAddendumDto = (a) => ({ id: a.id, evolutionId: a.parent_id, dentist: { id: a.dentist_id, name: a.dentist_name }, description: a.description, createdAt: a.created_at });
+
+// Evolução clínica (prontuário). `addenda` são as retificações; o registro original nunca é alterado.
+export const toEvolutionDto = (e, items = [], addenda = []) => ({
+  id: e.id,
+  appointmentId: e.appointment_id,
+  appointmentStartsAt: e.appointment_starts_at,
+  canAmend: Boolean(e.can_amend),
+  dentist: { id: e.dentist_id, name: e.dentist_name },
+  description: e.description,
+  procedures: items.map((i) => ({ procedure: { id: i.procedure_id, name: i.procedure_name }, tooth: i.tooth, wholeMouth: i.whole_mouth, faces: i.faces, budgetItemId: i.budget_item_id })),
+  addenda: addenda.map(toAddendumDto),
+  createdAt: e.created_at,
 });
 
 export const toBudgetItemDto = (i) => ({
@@ -97,6 +116,7 @@ export const toBudgetItemDto = (i) => ({
   performedByDentistId: i.performed_by_dentist_id,
   performedAt: i.performed_at,
   position: i.position,
+  approvalId: i.approval_id,
 });
 
 // subtotal = itens que não foram cancelados; total nunca fica negativo
@@ -115,11 +135,22 @@ export const toBudgetSummaryDto = (b) => ({
   updatedAt: b.updated_at,
 });
 
-export const toBudgetDto = (b, items) => ({ ...toBudgetSummaryDto(b), items: items.map(toBudgetItemDto) });
+export const toApprovalDto = (a) => ({
+  id: a.id,
+  itemsCount: a.items_count,
+  subtotalCents: a.subtotal,
+  discountCents: a.discount_cents,
+  totalCents: Math.max(a.subtotal - a.discount_cents, 0),
+  notes: a.notes,
+  createdAt: a.created_at,
+});
+
+export const toBudgetDto = (b, items, approvals = []) => ({ ...toBudgetSummaryDto(b), items: items.map(toBudgetItemDto), approvals: approvals.map(toApprovalDto) });
 
 export const toPaymentDto = (p) => ({
   id: p.id,
   budgetId: p.budget_id,
+  approvalId: p.approval_id,
   patient: { id: p.patient_id, name: p.patient_name },
   amountCents: p.amount_cents,
   dueDate: p.due_date,

@@ -1,5 +1,6 @@
 // Cenário comum dos testes de repasse: clínica com dois dentistas, um paciente e dois procedimentos.
 import { api, createDentist, createPatient, createProcedure, setupUser } from './factories.js';
+import { execute } from './execute.js';
 
 export async function setup() {
   const admin = await setupUser();
@@ -34,8 +35,12 @@ export async function approvedBudget(c, { procedures = [c.filling], dentistId = 
   return res.body;
 }
 
-export const perform = (c, budget, index = 0, body = {}, headers = c.headers) =>
-  api().post(`/api/budgets/${budget.id}/items/${budget.items[index].id}/perform`).set(headers).send(body);
+/** Executa o item do orçamento (por padrão pelo dentista do orçamento; `dentistId` e `performedAt` opcionais) e devolve o orçamento. */
+export async function perform(c, budget, index = 0, body = {}) {
+  const dentist = [c.dentist, c.other].find((d) => d.dentist.id === (body.dentistId ?? budget.dentist.id));
+  const res = await execute({ admin: c.headers, dentist, budget, indexes: [index], performedAt: body.performedAt });
+  return res.status === 200 ? api().get(`/api/budgets/${budget.id}`).set(c.headers) : res;
+}
 
 /** Recebimento imediato. */
 export async function receive(c, budget, amountCents, method = 'pix', paidAt = new Date().toISOString()) {

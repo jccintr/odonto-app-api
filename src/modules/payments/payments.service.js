@@ -4,7 +4,7 @@ import { conflict, forbidden, notFound, unprocessable } from '../../utils/errors
 import { toPaymentDto } from '../../utils/dto.js';
 import { addMonths, businessDate, splitAmount } from '../../utils/dates.js';
 import { pageResult, paginate } from '../../utils/pagination.js';
-import { findBudgetSummary } from '../budgets/budgets.service.js';
+import { findBudgetSummary, listApprovals } from '../budgets/budgets.service.js';
 
 const COLUMN = { amountCents: 'amount_cents', dueDate: 'due_date' };
 const toColumns = (input) => Object.fromEntries(Object.entries(input).map(([key, value]) => [COLUMN[key] ?? key, value]));
@@ -40,12 +40,25 @@ const assertReceivable = (budget) => {
   }
 };
 
-const budgetTotal = (budget) => Math.max(budget.subtotal - budget.discount_cents, 0);
+// cada rodada de aprovação tem o próprio desconto e as próprias parcelas: o saldo é por rodada
+const approvalTotal = (approval) => Math.max(approval.subtotal - approval.discount_cents, 0);
 
-// soma do que já foi lançado (pendente + pago); cancelados não contam
-async function scheduledCents(trx, budgetId, exceptPaymentId = null) {
+/** Rodada a que o lançamento pertence: a informada, ou a única do orçamento. Com várias rodadas é preciso dizer qual. */
+async function resolveApproval(trx, budgetId, approvalId) {
+  const approvals = await listApprovals(trx, budgetId);
+  if (approvalId) {
+    const found = approvals.find((approval) => approval.id === approvalId);
+    if (!found) throw notFound('Rodada de aprovação');
+    return found;
+  }
+  if (approvals.length === 1) return approvals[0];
+  throw unprocessable('Este orçamento tem mais de uma rodada de aprovação: informe qual.', { code: 'APPROVAL_REQUIRED' });
+}
+
+// soma do que já foi lançado na rodada (pendente + pago); cancelados não contam
+async function scheduledCents(trx, approvalId, exceptPaymentId = null) {
   const [{ sum }] = await trx('payments')
-    .where({ budget_id: budgetId })
+    .where({ approval_id: approvalId })
     .whereNot('status', 'canceled')
     .modify((query) => { if (exceptPaymentId) query.whereNot('id', exceptPaymentId); })
     .sum({ sum: 'amount_cents' });
@@ -63,12 +76,13 @@ export function createPayment(auth, budgetId, input) {
   return withTenant(auth.clinicId, async (trx) => {
     const budget = await lockBudget(trx, budgetId);
     assertReceivable(budget);
-    assertWithinBalance(input.amountCents, budgetTotal(budget) - (await scheduledCents(trx, budgetId)));
+    const approval = await resolveApproval(trx, budgetId, input.approvalId);
+    assertWithinBalance(input.amountCents, approvalTotal(approval) - (await scheduledCents(trx, approval.id)));
 
     const paidAt = input.paidAt ? new Date(input.paidAt) : null;
     const [{ id }] = await trx('payments')
       .insert({
-        clinic_id: auth.clinicId, patient_id: budget.patient_id, budget_id: budgetId, amount_cents: input.amountCents,
+        clinic_id: auth.clinicId, patient_id: budget.patient_id, budget_id: budgetId, approval_id: approval.id, amount_cents: input.amountCents,
         due_date: input.dueDate ?? businessDate(paidAt), status: paidAt ? 'paid' : 'pending', method: input.method, paid_at: paidAt,
         received_by: paidAt ? auth.userId : null, notes: input.notes, created_by: auth.userId,
       })
@@ -79,11 +93,12 @@ export function createPayment(auth, budgetId, input) {
 }
 
 /** Gera parcelas mensais (mesmo dia de cada mês) com o saldo do orçamento, ou com o valor informado. */
-export function planPayments(auth, budgetId, { installments, firstDueDate, amountCents }) {
+export function planPayments(auth, budgetId, { installments, firstDueDate, amountCents, approvalId }) {
   return withTenant(auth.clinicId, async (trx) => {
     const budget = await lockBudget(trx, budgetId);
     assertReceivable(budget);
-    const balance = budgetTotal(budget) - (await scheduledCents(trx, budgetId));
+    const approval = await resolveApproval(trx, budgetId, approvalId);
+    const balance = approvalTotal(approval) - (await scheduledCents(trx, approval.id));
     if (balance <= 0) throw unprocessable('Este orçamento não tem saldo a receber.', { code: 'NO_BALANCE' });
 
     const total = amountCents ?? balance;
@@ -91,7 +106,7 @@ export function planPayments(auth, budgetId, { installments, firstDueDate, amoun
     if (total < installments) throw unprocessable('O valor é menor que o número de parcelas.');
 
     const rows = splitAmount(total, installments).map((amount, index) => ({
-      clinic_id: auth.clinicId, patient_id: budget.patient_id, budget_id: budgetId, amount_cents: amount,
+      clinic_id: auth.clinicId, patient_id: budget.patient_id, budget_id: budgetId, approval_id: approval.id, amount_cents: amount,
       due_date: addMonths(firstDueDate, index), installment: index + 1, installments_total: installments, created_by: auth.userId,
     }));
     const ids = (await trx('payments').insert(rows).returning('id')).map((row) => row.id);
@@ -109,7 +124,8 @@ export function listBudgetPayments(auth, budgetId) {
 
     const active = rows.filter((row) => row.status !== 'canceled');
     const sum = (list) => list.reduce((total, row) => total + row.amount_cents, 0);
-    const totalCents = budgetTotal(budget);
+    const approvals = await listApprovals(trx, budgetId);
+    const totalCents = approvals.reduce((total, approval) => total + approvalTotal(approval), 0);
     const scheduledCentsTotal = sum(active);
     return {
       summary: {
@@ -120,6 +136,16 @@ export function listBudgetPayments(auth, budgetId) {
         overdueCents: sum(active.filter((row) => row.overdue)),
         balanceCents: Math.max(totalCents - scheduledCentsTotal, 0),
       },
+      approvals: approvals.map((approval) => {
+        const own = active.filter((row) => row.approval_id === approval.id);
+        return {
+          approvalId: approval.id,
+          totalCents: approvalTotal(approval),
+          scheduledCents: sum(own),
+          paidCents: sum(own.filter((row) => row.status === 'paid')),
+          balanceCents: Math.max(approvalTotal(approval) - sum(own), 0),
+        };
+      }),
       data: rows.map(toPaymentDto),
     };
   });
@@ -163,8 +189,9 @@ export function updatePayment(auth, id, changes) {
     const payment = await loadPayment(trx, id);
     assertPending(payment);
     if (changes.amountCents !== undefined) {
-      const budget = await lockBudget(trx, payment.budget_id);
-      assertWithinBalance(changes.amountCents, budgetTotal(budget) - (await scheduledCents(trx, payment.budget_id, id)));
+      await lockBudget(trx, payment.budget_id);
+      const approval = await resolveApproval(trx, payment.budget_id, payment.approval_id);
+      assertWithinBalance(changes.amountCents, approvalTotal(approval) - (await scheduledCents(trx, approval.id, id)));
     }
     await trx('payments').where({ id }).update({ ...toColumns(changes), updated_at: new Date() });
     await audit(trx, auth, id, 'update', { fields: Object.keys(changes) });

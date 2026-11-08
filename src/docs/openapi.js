@@ -41,7 +41,9 @@ const TAGS = [
   ['Pacientes', 'Cadastro e ficha dos pacientes.'],
   ['Imagens', 'Radiografias, fotos e documentos do paciente (armazenados no Cloudinary, privados).'],
   ['Odontograma', 'Marcações por dente do paciente.'],
+  ['Prontuário', 'Evoluções clínicas dos atendimentos realizados (só administração e dentistas; só acrescenta).'],
   ['Agenda', 'Atendimentos agendados.'],
+  ['Recepção', 'Lista de trabalho da recepção: o que agendar, cobrar e acompanhar (administração e secretária).'],
   ['Orçamentos', 'Orçamentos, itens, aprovação e execução dos procedimentos.'],
   ['Pagamentos', 'Recebimentos, parcelas, contas a receber e inadimplência.'],
   ['Repasse', 'Repasse aos dentistas: configuração, regras, lançamentos, saldos e fechamentos (só administração).'],
@@ -52,12 +54,13 @@ const TAGS = [
 
 function tagFor({ path }) {
   if (path.includes('/odontogram')) return 'Odontograma';
+  if (path.includes('/evolutions')) return 'Prontuário';
   if (path.includes('/images')) return 'Imagens';
   if (path.includes('/payment')) return 'Pagamentos';
   const group = path.split('/')[2];
   return {
     auth: 'Autenticação', signup: 'Cadastro', legal: 'Cadastro', billing: 'Assinatura', account: 'Conta', clinic: 'Clínica', users: 'Usuários', dentists: 'Dentistas', procedures: 'Procedimentos',
-    patients: 'Pacientes', appointments: 'Agenda', budgets: 'Orçamentos', payouts: 'Repasse', reports: 'Relatórios', notifications: 'Avisos', platform: 'Plataforma',
+    patients: 'Pacientes', appointments: 'Agenda', budgets: 'Orçamentos', payouts: 'Repasse', reports: 'Relatórios', notifications: 'Avisos', platform: 'Plataforma', worklist: 'Recepção',
   }[group];
 }
 

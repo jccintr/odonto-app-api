@@ -1,5 +1,5 @@
 import { z } from '../../config/zod.js';
-import { isoDateTime, optionalText, uuidField } from '../../utils/fields.js';
+import { optionalText, uuidField } from '../../utils/fields.js';
 import { paginationSchema } from '../../utils/pagination.js';
 import { normalizeFaces, TEETH } from '../../utils/tooth.js';
 
@@ -53,7 +53,13 @@ export const updateItemSchema = z
 // "completed" é automático (quando não resta item pendente), por isso não é aceito aqui
 export const changeStatusSchema = z.object({ status: z.enum(['open', 'approved', 'rejected'], { error: 'Situação inválida.' }) });
 
-export const performItemSchema = z.object({ dentistId: uuidField.optional(), performedAt: isoDateTime.optional() });
+// rodada de aprovação: quais itens o paciente aprovou agora e o desconto combinado para eles
+export const approveItemsSchema = z.object({
+  itemIds: z.array(uuidField).min(1, 'Escolha ao menos um procedimento.').max(100, 'Procedimentos demais.')
+    .refine((ids) => new Set(ids).size === ids.length, 'Procedimento repetido.'),
+  discountCents: centsField.default(0),
+  notes: optionalText(500, 'Observações').optional(),
+});
 
 export const budgetParams = z.object({ id: uuidField });
 export const itemParams = z.object({ id: uuidField, itemId: uuidField });

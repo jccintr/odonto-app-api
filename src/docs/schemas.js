@@ -115,7 +115,9 @@ export const SCHEMAS = {
     emailVerified: bool, createdAt: dateTime, updatedAt: dateTime,
   }),
   Clinica: obj({
-    id: uuid, name: str, slug: str, document: nstr, plan: str, status: enumOf(['active', 'suspended']), createdAt: dateTime, updatedAt: dateTime,
+    id: uuid, name: str, slug: str, document: nstr, plan: str, status: enumOf(['active', 'suspended']),
+    overdueGraceDays: { type: 'integer', description: 'Dias de atraso tolerados antes de bloquear o paciente (padrão 7).' },
+    cashDiscountPercent: { type: 'integer', description: 'Desconto sugerido (%) na aprovação quando o paciente paga à vista; 0 = sem sugestão (padrão).' }, createdAt: dateTime, updatedAt: dateTime,
   }),
   Sessao: obj({
     accessToken: { type: 'string', description: 'JWT de acesso (curta duração). Enviar em `Authorization: Bearer ...`.' },
@@ -126,7 +128,7 @@ export const SCHEMAS = {
   Perfil: obj({ user: ref('Usuario'), clinic: ref('Clinica') }),
   AdminPlataforma: obj({ id: uuid, name: str, email: str, active: bool }),
   ClinicaPlataforma: obj({
-    id: uuid, name: str, slug: str, document: nstr, plan: str, status: enumOf(['active', 'suspended']), createdAt: dateTime, updatedAt: dateTime,
+    id: uuid, name: str, slug: str, document: nstr, plan: str, status: enumOf(['active', 'suspended']), overdueGraceDays: int, cashDiscountPercent: int, createdAt: dateTime, updatedAt: dateTime,
     subscription: obj({
       ...statusProps, planName: nstr, deletionRequestedAt: nDateTime, templateCode: { type: ['string', 'null'], description: 'Modelo escolhido no cadastro; null = criada pela plataforma.' },
     }),
@@ -152,23 +154,31 @@ export const SCHEMAS = {
     active: bool, createdAt: dateTime, updatedAt: dateTime,
   }),
 
-  PacienteResumo: obj({ id: uuid, name: str, cpf: nstr, phone: nstr, birthDate: nDate, active: bool }, 'Formato das listas: sem anamnese nem endereço.'),
+  PacienteResumo: obj({ id: uuid, name: str, cpf: nstr, phone: { ...nstr, description: 'Sempre `null` para o perfil dentista.' }, birthDate: nDate, active: bool }, 'Formato das listas: sem anamnese nem endereço.'),
   Paciente: obj({
-    id: uuid, name: str, cpf: { ...nstr, description: 'Só dígitos.' }, birthDate: nDate, phone: { ...nstr, description: 'DDD + número, só dígitos.' }, email: nstr,
+    id: uuid, name: str, cpf: { ...nstr, description: 'Só dígitos.' }, birthDate: nDate, phone: { ...nstr, description: 'DDD + número, só dígitos. Sempre `null` para o perfil dentista.' }, email: nstr,
     address: obj({ zip: nstr, street: nstr, number: nstr, complement: nstr, district: nstr, city: nstr, state: nstr }),
-    guardianName: nstr, guardianPhone: nstr,
+    guardianName: nstr, guardianPhone: { ...nstr, description: 'Sempre `null` para o perfil dentista.' },
     anamnesis: { type: 'object', description: 'Objeto livre com a anamnese.' },
     notes: nstr,
     contactConsent: { type: 'boolean', description: 'Aceite para receber avisos por e-mail e WhatsApp.' },
     consentAt: nDateTime, active: bool, createdAt: dateTime, updatedAt: dateTime,
   }),
 
+  Adimplencia: obj({
+    blocked: { type: 'boolean', description: 'Bloqueado: não pode ter novos atendimentos nem iniciar os marcados.' },
+    overdue: { type: 'boolean', description: 'Tem parcela vencida além da tolerância (mesmo que uma liberação esteja valendo).' },
+    overdueCents: money, overdueCount: int, oldestDueDate: { ...nstr, description: 'Vencimento mais antigo em atraso (AAAA-MM-DD).' },
+    graceDays: int, releasedUntil: nDateTime, releaseReason: nstr,
+  }),
+
   Atendimento: obj({
     id: uuid,
-    patient: obj({ id: uuid, name: str, phone: nstr }),
+    patient: obj({ id: uuid, name: str, phone: { ...nstr, description: 'Sempre `null` para o perfil dentista.' } }),
     dentist: obj({ id: uuid, name: str, color: str }),
     startsAt: dateTime, endsAt: dateTime,
-    status: enumOf(['scheduled', 'confirmed', 'attended', 'no_show', 'canceled'], 'scheduled = agendado; confirmed = confirmado; attended = atendido; no_show = faltou; canceled = cancelado.'),
+    status: enumOf(['scheduled', 'confirmed', 'in_progress', 'attended', 'no_show', 'canceled'], 'scheduled = agendado; confirmed = confirmado; in_progress = em atendimento; attended = atendido; no_show = faltou; canceled = cancelado.'),
+    startedAt: nDateTime,
     notes: nstr, canceledReason: nstr, createdAt: dateTime, updatedAt: dateTime,
   }),
 
@@ -177,6 +187,36 @@ export const SCHEMAS = {
     tooth: { type: ['integer', 'null'], description: 'Dente na numeração FDI (11-48 permanentes, 51-85 de leite).' },
     faces: { ...nstr, description: 'Faces V, L, M, D, O, sempre nessa ordem e sem repetição.' },
     priceCents: money, status: itemStatus, performedByDentistId: nuuid, performedAt: nDateTime, position: int,
+    approvalId: { ...nuuid, description: 'Rodada em que o paciente aprovou o procedimento. `null` = apenas proposto (ainda não aprovado, não pode ser executado nem cobrado).' },
+  }),
+  ItemATratar: obj({
+    itemId: uuid, budgetId: uuid, dentist: obj({ id: uuid, name: str }), procedure: obj({ id: uuid, name: str }),
+    tooth: { type: ['integer', 'null'] }, faces: nstr, approvedAt: { ...dateTime, description: 'Quando o paciente aprovou (data da rodada).' },
+  }),
+  ListaDeTrabalho: obj({
+    approvedWithoutAppointment: array('PendenciaAgendar'),
+    budgetsAwaitingAnswer: array('PendenciaOrcamento'),
+    overdueWithAppointments: array('PendenciaAtraso'),
+  }),
+  PendenciaAgendar: obj({ patient: obj({ id: uuid, name: str }), itemsCount: int, approvedSince: dateTime }),
+  PendenciaOrcamento: obj({
+    budgetId: uuid, patient: obj({ id: uuid, name: str }), dentistName: str, totalCents: money, createdAt: dateTime,
+    daysOpen: { type: 'integer', description: 'Dias desde que o orçamento foi criado (data da clínica).' },
+  }),
+  PendenciaAtraso: obj({
+    patient: obj({ id: uuid, name: str }),
+    nextAppointment: obj({ id: uuid, startsAt: dateTime, dentistName: str }),
+    overdueCents: money, oldestDueDate: date,
+    blocked: { type: 'boolean', description: 'true = sem liberação do administrador: o dentista não poderá iniciar o atendimento.' },
+    releasedUntil: nDateTime,
+  }),
+  ItensATratar: obj({ data: array('ItemATratar') }),
+  RodadaAprovacao: obj({
+    id: uuid,
+    itemsCount: { type: 'integer', description: 'Itens da rodada que não foram cancelados.' },
+    subtotalCents: money, discountCents: { ...money, description: 'Desconto combinado nesta rodada (cada rodada tem o seu).' },
+    totalCents: { ...money, description: 'Subtotal da rodada menos o desconto, nunca negativo.' },
+    notes: nstr, createdAt: dateTime,
   }),
   OrcamentoResumo: obj({
     id: uuid, patient: obj({ id: uuid, name: str }), dentist: obj({ id: uuid, name: str }), status: budgetStatus, notes: nstr,
@@ -190,12 +230,12 @@ export const SCHEMAS = {
     ...obj({
       id: uuid, patient: obj({ id: uuid, name: str }), dentist: obj({ id: uuid, name: str }), status: budgetStatus, notes: nstr,
       itemsCount: int, subtotalCents: money, discountCents: money, totalCents: money,
-      approvedAt: nDateTime, createdAt: dateTime, updatedAt: dateTime, items: array('ItemOrcamento'),
+      approvedAt: nDateTime, createdAt: dateTime, updatedAt: dateTime, items: array('ItemOrcamento'), approvals: array('RodadaAprovacao'),
     }),
   },
 
   Pagamento: obj({
-    id: uuid, budgetId: uuid, patient: obj({ id: uuid, name: str }), amountCents: money, dueDate: date,
+    id: uuid, budgetId: uuid, approvalId: { ...nuuid, description: 'Rodada de aprovação cobrada por este lançamento.' }, patient: obj({ id: uuid, name: str }), amountCents: money, dueDate: date,
     status: enumOf(PAYMENT_STATUSES, 'pending = a receber; paid = recebido; canceled = cancelado/estornado.'),
     overdue: { type: 'boolean', description: 'Pendente com vencimento antes de hoje (horário de Brasília).' },
     method: nMethod, paidAt: nDateTime,
@@ -203,12 +243,16 @@ export const SCHEMAS = {
     installmentsTotal: nint, canceledReason: nstr, notes: nstr, createdAt: dateTime, updatedAt: dateTime,
   }),
   ResumoFinanceiro: obj({
-    totalCents: { ...money, description: 'Total do orçamento (subtotal menos desconto).' },
+    totalCents: { ...money, description: 'Total aprovado pelo paciente (soma das rodadas, cada uma com o próprio desconto).' },
     scheduledCents: { ...money, description: 'Já lançado (pendente + recebido); cancelados não contam.' },
     paidCents: money, pendingCents: money, overdueCents: money,
     balanceCents: { ...money, description: 'Saldo ainda sem lançamento (nunca negativo).' },
   }),
-  PagamentosDoOrcamento: obj({ summary: ref('ResumoFinanceiro'), data: array('Pagamento') }),
+  SaldoRodada: obj({
+    approvalId: uuid, totalCents: money, scheduledCents: money, paidCents: money,
+    balanceCents: { ...money, description: 'Saldo da rodada ainda sem lançamento (nunca negativo).' },
+  }),
+  PagamentosDoOrcamento: obj({ summary: ref('ResumoFinanceiro'), approvals: array('SaldoRodada'), data: array('Pagamento') }),
 
   ConfigRepasse: obj({
     releaseOn: enumOf(PAYOUT_RELEASE_MODES, 'payment = a comissão é liberada na proporção do que o paciente pagou; procedure = liberada por inteiro quando o procedimento é realizado.'),
@@ -276,7 +320,7 @@ export const SCHEMAS = {
       topProcedures: { type: 'array', description: 'Até 5, do maior para o menor valor produzido.', items: obj({ procedure: obj({ id: uuid, name: str }), count: int, producedCents: money }) },
     }),
     appointments: obj({
-      total: int, scheduled: int, confirmed: int, attended: int, no_show: int, canceled: int,
+      total: int, scheduled: int, confirmed: int, in_progress: int, attended: int, no_show: int, canceled: int,
       attendanceRate: { type: ['number', 'null'], description: 'Atendidos / (atendidos + faltas); null sem base.' },
       noShowRate: { type: ['number', 'null'], description: 'Faltas / (atendidos + faltas); null sem base.' },
     }),
@@ -297,6 +341,23 @@ export const SCHEMAS = {
   EvolucaoMensal: obj({
     data: { type: 'array', items: obj({ month: str, receivedCents: money, refundedCents: money, producedCents: money, payoutsPaidCents: money, newPatients: int }) },
   }),
+
+  Retificacao: obj({
+    id: uuid, evolutionId: uuid, dentist: obj({ id: uuid, name: str }), description: str, createdAt: dateTime,
+  }, 'Correção acrescentada a uma evolução; o registro original nunca é alterado.'),
+  Evolucao: obj({
+    id: uuid, appointmentId: uuid, appointmentStartsAt: nDateTime,
+    canAmend: { type: 'boolean', description: 'O usuário logado é o dentista autor e pode retificar.' },
+    dentist: obj({ id: uuid, name: str }),
+    description: { ...nstr, description: 'O que foi feito, em texto livre.' },
+    procedures: {
+      type: 'array',
+      items: obj({ procedure: obj({ id: uuid, name: str }), tooth: { ...nint, description: 'Dente afetado (FDI); null quando for boca toda.' }, wholeMouth: { type: 'boolean', description: 'Procedimento na boca toda (sem dente específico).' }, faces: nstr, budgetItemId: nuuid }),
+      description: 'Procedimentos realizados, uma linha por dente afetado (o nome é o de quando foi registrado).',
+    },
+    addenda: array('Retificacao'),
+    createdAt: dateTime,
+  }, 'Registro do prontuário: o que foi feito em um atendimento realizado.'),
 
   Imagem: obj({
     id: uuid, patientId: uuid,
@@ -352,5 +413,10 @@ export const SCHEMAS = {
   Odontograma: obj({
     patientId: uuid,
     teeth: { type: 'object', description: 'Marcações atuais agrupadas pelo número do dente (FDI).', additionalProperties: array('MarcacaoDente') },
+    planned: { type: 'object', description: 'Camada "planejado": procedimentos com dente ainda não executados, por dente (FDI).', additionalProperties: array('ProcedimentoPlanejado') },
+  }),
+  ProcedimentoPlanejado: obj({
+    itemId: uuid, procedure: obj({ id: uuid, name: str }), faces: nstr,
+    approved: { type: 'boolean', description: 'true = o paciente já aprovou; false = só proposto no orçamento.' },
   }),
 };

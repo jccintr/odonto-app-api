@@ -31,6 +31,17 @@ describe('PATCH /api/clinic', () => {
     expect(cleared.body.document).toBeNull();
   });
 
+  it('tolerância de atraso e desconto à vista: padrões, limites e gravação', async () => {
+    const a = await setupUser();
+    expect((await api().get('/api/clinic').set(a.headers)).body).toMatchObject({ overdueGraceDays: 7, cashDiscountPercent: 0 });
+    const ok = await api().patch('/api/clinic').set(a.headers).send({ cashDiscountPercent: 8, overdueGraceDays: 3 });
+    expect(ok.body).toMatchObject({ cashDiscountPercent: 8, overdueGraceDays: 3 });
+    for (const bad of [{ cashDiscountPercent: 51 }, { cashDiscountPercent: -1 }, { cashDiscountPercent: 2.5 }, { overdueGraceDays: 61 }]) {
+      expect((await api().patch('/api/clinic').set(a.headers).send(bad)).status).toBe(400);
+    }
+    expect((await api().get('/api/clinic').set(a.headers)).body.cashDiscountPercent).toBe(8);
+  });
+
   it('secretária e dentista não alteram (403)', async () => {
     const { clinic } = await setupUser();
     for (const role of ['secretary', 'dentist']) {

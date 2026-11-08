@@ -11,7 +11,7 @@ const router = Router();
 // Não há exclusão: o paciente é arquivado (active: false), porque o histórico clínico não pode sumir.
 router.use(authenticate);
 router.get('/', validate({ query: listPatientsQuery }), async (req, res) => {
-  res.json(await listPatients(req.auth.clinicId, req.valid.query));
+  res.json(await listPatients(req.auth, req.valid.query));
 });
 router.get('/:id', validate({ params: idParams }), async (req, res) => {
   res.json(await getPatient(req.auth, req.valid.params.id));

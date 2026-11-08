@@ -1,17 +1,20 @@
 import { describe, expect, it, vi } from 'vitest';
 import db from '../src/db/knex.js';
-import { api, bearer, createClinic, createDentist, createPatient, loginAs, setupUser } from './helpers/factories.js';
+import { api, bearer, createClinic, createDentist, createPatient, createProcedure, loginAs, setupUser } from './helpers/factories.js';
 
 const T = (h, m = 0) => `2099-11-03T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00.000Z`;
 const book = (headers, body) => api().post('/api/appointments').set(headers).send(body);
 const slot = (c, h1, h2, extra = {}) => ({ patientId: c.patient.id, dentistId: c.dentist.dentist.id, startsAt: T(h1), endsAt: T(h2), ...extra });
+const patch = (headers, id, body) => api().patch(`/api/appointments/${id}`).set(headers).send(body);
 const dentistHeaders = async (user) => bearer((await loginAs(user)).accessToken);
 
 async function setup() {
   const admin = await setupUser();
   const dentist = await createDentist(admin.clinic, { name: 'Dr. Paulo' });
   const patient = await createPatient(admin.clinic, { name: 'Ana Lima', phone: '35999990001' });
-  return { ...admin, dentist, patient };
+  const patient2 = await createPatient(admin.clinic, { name: 'Carlos Souza', phone: '35999990002' });
+  const procedure = await createProcedure(admin.clinic, { name: 'Restauração' });
+  return { ...admin, dentist, patient, patient2, procedure };
 }
 
 describe('POST /api/appointments', () => {
@@ -97,15 +100,54 @@ describe('POST /api/appointments', () => {
     expect((await book(c.headers, slot(c, 8, 9))).status).toBe(201);
   });
 
-  it('outro dentista no mesmo horário pode; cancelar libera o horário', async () => {
+  it('outro dentista no mesmo horário pode (com outro paciente); cancelar libera o horário', async () => {
     const c = await setup();
     const other = await createDentist(c.clinic);
+    const otherPatient = await createPatient(c.clinic, { name: 'Bia Costa' });
     const first = (await book(c.headers, slot(c, 9, 10))).body;
-    expect((await book(c.headers, slot(c, 9, 10, { dentistId: other.dentist.id }))).status).toBe(201);
+    expect((await book(c.headers, slot(c, 9, 10, { dentistId: other.dentist.id, patientId: otherPatient.id }))).status).toBe(201);
     expect((await book(c.headers, slot(c, 9, 10))).status).toBe(409);
 
     await api().post(`/api/appointments/${first.id}/status`).set(c.headers).send({ status: 'canceled' });
     expect((await book(c.headers, slot(c, 9, 10))).status).toBe(201);
+  });
+
+  it('o mesmo paciente não pode estar em dois lugares: 409 PATIENT_BUSY com outro dentista; encostar e cancelado pode', async () => {
+    const c = await setup();
+    const other = await createDentist(c.clinic);
+    const first = (await book(c.headers, slot(c, 9, 10))).body;
+    for (const [a, b] of [[9, 10], [9, 11], [8, 10], [8, 11]]) {
+      const res = await book(c.headers, slot(c, a, b, { dentistId: other.dentist.id }));
+      expect(res.status, `${a}-${b}`).toBe(409);
+      expect(res.body.code).toBe('PATIENT_BUSY');
+    }
+    expect((await book(c.headers, slot(c, 10, 11, { dentistId: other.dentist.id }))).status).toBe(201); // encosta
+    expect((await book(c.headers, slot(c, 8, 9, { dentistId: other.dentist.id }))).status).toBe(201);
+
+    await api().post(`/api/appointments/${first.id}/status`).set(c.headers).send({ status: 'canceled' });
+    expect((await book(c.headers, slot(c, 9, 10, { dentistId: other.dentist.id }))).status).toBe(201); // cancelado libera
+  });
+
+  it('o dentista também não consegue marcar o paciente que já está em outro atendimento', async () => {
+    const c = await setup();
+    const other = await createDentist(c.clinic);
+    await book(c.headers, slot(c, 9, 10));
+    const res = await book(await dentistHeaders(other.user), { patientId: c.patient.id, startsAt: T(9, 30), endsAt: T(10, 30) });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('PATIENT_BUSY');
+  });
+
+  it('remarcar para um horário em que o paciente já está em outro atendimento: 409 PATIENT_BUSY (e nada muda)', async () => {
+    const c = await setup();
+    const other = await createDentist(c.clinic);
+    await book(c.headers, slot(c, 10, 11));
+    const a = (await book(c.headers, slot(c, 8, 9, { dentistId: other.dentist.id }))).body;
+    const res = await patch(c.headers, a.id, { startsAt: T(10, 30) });
+    expect(res.status).toBe(409);
+    expect(res.body.code).toBe('PATIENT_BUSY');
+    expect((await api().get(`/api/appointments/${a.id}`).set(c.headers)).body.startsAt).toBe(T(8));
+    // trocar o dentista para um horário livre do paciente continua valendo
+    expect((await patch(c.headers, a.id, { dentistId: c.dentist.dentist.id })).status).toBe(200);
   });
 
   it('o banco recusa (FK composta) atendimento ligando paciente ou dentista de outra clínica', async () => {
@@ -129,7 +171,7 @@ describe('GET /api/appointments', () => {
     const p2 = await createPatient(c.clinic, { name: 'Bruno Costa' });
     const a = (await book(c.headers, slot(c, 9, 10))).body;
     const b = (await book(c.headers, slot(c, 11, 12, { patientId: p2.id }))).body;
-    const d = (await book(c.headers, slot(c, 9, 10, { dentistId: d2.dentist.id }))).body;
+    const d = (await book(c.headers, slot(c, 9, 10, { dentistId: d2.dentist.id, patientId: c.patient2.id }))).body;
     await api().post(`/api/appointments/${b.id}/status`).set(c.headers).send({ status: 'canceled' });
     const foreign = await setup();
     await book(foreign.headers, slot(foreign, 9, 10));
@@ -192,7 +234,7 @@ describe('GET /api/appointments/:id', () => {
     const c = await setup();
     const other = await createDentist(c.clinic);
     const mine = (await book(c.headers, slot(c, 9, 10))).body;
-    const theirs = (await book(c.headers, slot(c, 9, 10, { dentistId: other.dentist.id }))).body;
+    const theirs = (await book(c.headers, slot(c, 9, 10, { dentistId: other.dentist.id, patientId: c.patient2.id }))).body;
     const foreign = await setup();
     const foreignAppt = (await book(foreign.headers, slot(foreign, 9, 10))).body;
     const get = (headers, id) => api().get(`/api/appointments/${id}`).set(headers);
@@ -209,8 +251,7 @@ describe('GET /api/appointments/:id', () => {
 });
 
 describe('PATCH /api/appointments/:id (remarcar)', () => {
-  const patch = (headers, id, body) => api().patch(`/api/appointments/${id}`).set(headers).send(body);
-  const status = (headers, id, s, reason) => api().post(`/api/appointments/${id}/status`).set(headers).send({ status: s, reason });
+  const status = (headers, id, s, reason, evolution) => api().post(`/api/appointments/${id}/status`).set(headers).send({ status: s, reason, evolution });
 
   it('só observações: a situação não muda', async () => {
     const c = await setup();
@@ -271,7 +312,13 @@ describe('PATCH /api/appointments/:id (remarcar)', () => {
     const c = await setup();
     for (const [i, final] of [['attended'], ['no_show'], ['canceled']].entries()) {
       const a = (await book(c.headers, slot(c, 9 + i * 2, 10 + i * 2))).body;
-      await status(c.headers, a.id, final[0]);
+      if (final[0] === 'attended') {
+        const dh = await dentistHeaders(c.dentist.user);
+        await status(dh, a.id, 'in_progress');
+        await status(dh, a.id, 'attended', undefined, { procedures: [{ procedureId: c.procedure.id, wholeMouth: true }] });
+      } else {
+        await status(c.headers, a.id, final[0]);
+      }
       expect((await patch(c.headers, a.id, { notes: 'x' })).status).toBe(409);
     }
   });
@@ -280,7 +327,7 @@ describe('PATCH /api/appointments/:id (remarcar)', () => {
     const c = await setup();
     const other = await createDentist(c.clinic);
     const mine = (await book(c.headers, slot(c, 9, 10))).body;
-    const theirs = (await book(c.headers, slot(c, 9, 10, { dentistId: other.dentist.id }))).body;
+    const theirs = (await book(c.headers, slot(c, 9, 10, { dentistId: other.dentist.id, patientId: c.patient2.id }))).body;
     const headers = await dentistHeaders(c.dentist.user);
 
     expect((await patch(headers, mine.id, { notes: 'ok', dentistId: c.dentist.dentist.id })).status).toBe(200);
@@ -312,12 +359,42 @@ describe('PATCH /api/appointments/:id (remarcar)', () => {
 
 describe('POST /api/appointments/:id/status', () => {
   const status = (headers, id, body) => api().post(`/api/appointments/${id}/status`).set(headers).send(body);
+  // marcar como atendido exige registrar o procedimento e os dentes afetados
+  const DONE = (c) => ({ status: 'attended', evolution: { procedures: [{ procedureId: c.procedure.id, teeth: [16] }] } });
 
-  it('segue o fluxo: agendado -> confirmado -> atendido', async () => {
+  const START = { status: 'in_progress' };
+
+  it('segue o fluxo: agendado -> confirmado -> em atendimento -> atendido', async () => {
     const c = await setup();
     const a = (await book(c.headers, slot(c, 9, 10))).body;
+    const dh = await dentistHeaders(c.dentist.user);
     expect((await status(c.headers, a.id, { status: 'confirmed' })).body.status).toBe('confirmed');
-    expect((await status(c.headers, a.id, { status: 'attended' })).body.status).toBe('attended');
+    const started = await status(dh, a.id, START);
+    expect(started.body).toMatchObject({ status: 'in_progress' });
+    expect(started.body.startedAt).toBeTruthy();
+    expect((await status(dh, a.id, DONE(c))).body.status).toBe('attended');
+  });
+
+  it('o atendimento pode ser iniciado direto do agendado (sem confirmação)', async () => {
+    const c = await setup();
+    const a = (await book(c.headers, slot(c, 9, 10))).body;
+    expect((await status(await dentistHeaders(c.dentist.user), a.id, START)).body.status).toBe('in_progress');
+  });
+
+  it('só o dentista inicia o atendimento (403 para administração e secretária) e só se conclui depois de iniciado', async () => {
+    const c = await setup();
+    const secretary = await setupUser({ role: 'secretary', clinic: c.clinic });
+    const a = (await book(c.headers, slot(c, 9, 10))).body;
+    for (const headers of [c.headers, secretary.headers]) expect((await status(headers, a.id, START)).status).toBe(403);
+    const dh = await dentistHeaders(c.dentist.user);
+    const early = await status(dh, a.id, DONE(c)); // sem iniciar não conclui
+    expect(early.status).toBe(409);
+    expect(early.body.code).toBe('INVALID_TRANSITION');
+    await status(dh, a.id, START);
+    expect((await status(dh, a.id, { status: 'canceled' })).status).toBe(409); // iniciado, só se conclui
+    expect((await status(dh, a.id, { status: 'no_show' })).status).toBe(409);
+    expect((await status(dh, a.id, START)).status).toBe(409);
+    expect((await patch(c.headers, a.id, { notes: 'x' })).status).toBe(409); // não se remarca o que já começou
   });
 
   it('cancelar guarda o motivo (opcional); outras situações não têm motivo', async () => {
@@ -340,18 +417,23 @@ describe('POST /api/appointments/:id/status', () => {
     await status(c.headers, a.id, { status: 'confirmed' });
     expect((await status(c.headers, a.id, { status: 'confirmed' })).status).toBe(409);
     expect((await status(c.headers, a.id, { status: 'scheduled' })).status).toBe(409);
-    await status(c.headers, a.id, { status: 'attended' });
+    const dh = await dentistHeaders(c.dentist.user);
+    await status(dh, a.id, START);
+    await status(dh, a.id, DONE(c));
     for (const s of ['confirmed', 'canceled', 'no_show', 'scheduled']) expect((await status(c.headers, a.id, { status: s })).status).toBe(409);
+    expect((await status(dh, a.id, START)).status).toBe(409);
   });
 
   it('dentista muda a situação só dos próprios atendimentos (404 nos alheios)', async () => {
     const c = await setup();
     const other = await createDentist(c.clinic);
     const mine = (await book(c.headers, slot(c, 9, 10))).body;
-    const theirs = (await book(c.headers, slot(c, 9, 10, { dentistId: other.dentist.id }))).body;
+    const theirs = (await book(c.headers, slot(c, 9, 10, { dentistId: other.dentist.id, patientId: c.patient2.id }))).body;
     const headers = await dentistHeaders(c.dentist.user);
-    expect((await status(headers, mine.id, { status: 'attended' })).status).toBe(200);
-    expect((await status(headers, theirs.id, { status: 'attended' })).status).toBe(404);
+    expect((await status(headers, mine.id, START)).status).toBe(200);
+    expect((await status(headers, mine.id, DONE(c))).status).toBe(200);
+    expect((await status(headers, theirs.id, START)).status).toBe(404);
+    expect((await status(headers, theirs.id, DONE(c))).status).toBe(404);
   });
 
   it('valida o corpo (400) e isola as clínicas (404)', async () => {

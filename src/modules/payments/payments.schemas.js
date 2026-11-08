@@ -6,10 +6,11 @@ import { PAYMENT_METHODS, PAYMENT_STATUSES } from '../../utils/payments.js';
 const amountField = z.number().int('O valor deve ser em centavos (número inteiro).').min(1, 'O valor deve ser maior que zero.').max(100_000_000, 'Valor alto demais.');
 const methodField = z.enum(PAYMENT_METHODS, { error: 'Forma de pagamento inválida.' });
 const notesField = optionalText(500, 'Observações');
+const approvalField = uuidField; // rodada de aprovação; opcional quando o orçamento tem uma só
 
 // Já recebido (paidAt + method) ou a receber (dueDate). Misturar os dois não faz sentido.
 export const createPaymentSchema = z
-  .object({ amountCents: amountField, dueDate: isoDate.optional(), method: methodField.optional(), paidAt: isoDateTime.optional(), notes: notesField.optional() })
+  .object({ amountCents: amountField, approvalId: approvalField.optional(), dueDate: isoDate.optional(), method: methodField.optional(), paidAt: isoDateTime.optional(), notes: notesField.optional() })
   .superRefine((body, ctx) => {
     if (body.paidAt) {
       if (!body.method) ctx.addIssue({ code: 'custom', path: ['method'], message: 'Informe a forma de pagamento.' });
@@ -23,6 +24,7 @@ export const planSchema = z.object({
   installments: z.number().int('Número de parcelas inválido.').min(1, 'Informe ao menos 1 parcela.').max(48, 'No máximo 48 parcelas.'),
   firstDueDate: isoDate,
   amountCents: amountField.optional(),
+  approvalId: approvalField.optional(),
 });
 
 export const updatePaymentSchema = z

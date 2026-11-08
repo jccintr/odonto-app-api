@@ -22,18 +22,25 @@ export async function buildClinic(label) {
   const ownedBy = async (dentist, day) => {
     const base = { clinic_id: clinic.id, patient_id: patient.id };
     const [budget] = await db('budgets').insert({ ...base, dentist_id: dentist.dentist.id, status: 'approved', notes: `SEGREDO-${label}-orcamento` }).returning('*');
-    const [item] = await db('budget_items').insert({ clinic_id: clinic.id, budget_id: budget.id, procedure_id: procedure.id, tooth: 16, price_cents: 10000, position: 1 }).returning('*');
+    const [approval] = await db('budget_approvals').insert({ clinic_id: clinic.id, budget_id: budget.id }).returning('*');
+    const [item] = await db('budget_items').insert({ clinic_id: clinic.id, budget_id: budget.id, approval_id: approval.id, procedure_id: procedure.id, tooth: 16, price_cents: 10000, position: 1 }).returning('*');
     const [appointment] = await db('appointments')
       .insert({ ...base, dentist_id: dentist.dentist.id, starts_at: `2099-01-0${day}T10:00:00Z`, ends_at: `2099-01-0${day}T11:00:00Z`, notes: `SEGREDO-${label}-consulta` })
       .returning('*');
-    const [payment] = await db('payments').insert({ ...base, budget_id: budget.id, amount_cents: 5000, due_date: '2099-03-01', notes: `SEGREDO-${label}-pagamento` }).returning('*');
-    return { budget, item, appointment, payment };
+    const [payment] = await db('payments').insert({ ...base, budget_id: budget.id, approval_id: approval.id, amount_cents: 5000, due_date: '2099-03-01', notes: `SEGREDO-${label}-pagamento` }).returning('*');
+    return { budget, approval, item, appointment, payment };
   };
   const first = await ownedBy(d1, 1);
   const second = await ownedBy(d2, 2);
   const [record] = await db('tooth_records')
     .insert({ clinic_id: clinic.id, patient_id: patient.id, tooth: 11, condition: 'crown', recorded_by: admin.id, notes: `SEGREDO-${label}-dente` })
     .returning('*');
+
+  // prontuário: evolução do atendimento do dentista 1, com um procedimento
+  const [evolution] = await db('evolutions')
+    .insert({ clinic_id: clinic.id, patient_id: patient.id, dentist_id: d1.dentist.id, appointment_id: first.appointment.id, kind: 'evolution', description: `SEGREDO-${label}-evolucao`, created_by: d1.user.id })
+    .returning('*');
+  await db('evolution_items').insert({ clinic_id: clinic.id, evolution_id: evolution.id, procedure_id: procedure.id, procedure_name: `SEGREDO-${label}-procedimento`, tooth: 16 });
 
   const [image] = await db('patient_images')
     .insert({
@@ -75,7 +82,7 @@ export async function buildClinic(label) {
     .returning('*');
 
   return {
-    label, clinic, admin, rule, plan, invoice, entry, payout, image, notification, secretary, target, d1, d2, patient, procedure, record, ...first, second,
+    label, clinic, admin, rule, plan, invoice, entry, payout, image, notification, secretary, target, d1, d2, patient, procedure, record, evolution, ...first, second,
     tokens: { admin: signAccessToken(admin), secretary: signAccessToken(secretary), dentist: signAccessToken(d1.user) },
   };
 }

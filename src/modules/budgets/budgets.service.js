@@ -4,6 +4,7 @@ import { badRequest, conflict, forbidden, notFound, unprocessable } from '../../
 import { toBudgetDto, toBudgetSummaryDto } from '../../utils/dto.js';
 import { businessDate } from '../../utils/dates.js';
 import { pageResult, paginate } from '../../utils/pagination.js';
+import { recordAudit } from '../../services/audit.js';
 import { recordExecution } from '../payouts/payouts.accrual.js';
 
 // "completed" não é escolhido por ninguém: acontece sozinho quando não resta item pendente
@@ -52,6 +53,17 @@ async function loadBudget(trx, auth, id) {
   return row;
 }
 
+/** Rodadas de aprovação do orçamento, com o valor de cada uma (itens não cancelados menos o desconto da rodada). */
+export async function listApprovals(trx, budgetId) {
+  const rows = await trx('budget_approvals')
+    .leftJoin('budget_items', function join() { this.on('budget_items.approval_id', 'budget_approvals.id').andOnVal('budget_items.status', '<>', 'canceled'); })
+    .where('budget_approvals.budget_id', budgetId)
+    .groupBy('budget_approvals.id')
+    .orderBy('budget_approvals.created_at')
+    .select('budget_approvals.*', trx.raw('coalesce(sum(budget_items.price_cents), 0)::int AS subtotal'), trx.raw('count(budget_items.id)::int AS items_count'));
+  return rows;
+}
+
 async function detail(trx, auth, id) {
   const row = await loadBudget(trx, auth, id);
   const items = await trx('budget_items')
@@ -59,7 +71,7 @@ async function detail(trx, auth, id) {
     .where('budget_items.budget_id', id)
     .select('budget_items.*', 'procedures.name as procedure_name')
     .orderBy('budget_items.position');
-  return toBudgetDto(row, items);
+  return toBudgetDto(row, items, await listApprovals(trx, id));
 }
 
 async function loadItem(trx, budgetId, itemId) {
@@ -75,6 +87,13 @@ async function loadItem(trx, budgetId, itemId) {
 
 const assertOpen = (budget) => {
   if (budget.status !== 'open') throw conflict('Só é possível alterar orçamentos em aberto.', { code: 'BUDGET_NOT_OPEN' });
+};
+// itens podem ser incluídos, alterados e removidos enquanto estão só propostos: com o orçamento em aberto ou já em tratamento
+const assertEditable = (budget) => {
+  if (!['open', 'approved'].includes(budget.status)) throw conflict('Só é possível alterar orçamentos em aberto ou em tratamento.', { code: 'BUDGET_NOT_OPEN' });
+};
+const assertProposed = (item) => {
+  if (item.approval_id) throw conflict('Este procedimento já foi aprovado pelo paciente.', { code: 'ITEM_ALREADY_APPROVED' });
 };
 const assertApproved = (budget) => {
   if (budget.status !== 'approved') throw conflict('O orçamento precisa estar aprovado para executar este passo.', { code: 'BUDGET_NOT_APPROVED' });
@@ -166,17 +185,58 @@ export function changeStatus(auth, id, { status }) {
     if (!TRANSITIONS[budget.status].includes(status)) {
       throw conflict(`Não é possível mudar de "${budget.status}" para "${status}".`, { code: 'INVALID_TRANSITION' });
     }
-    if (status === 'approved' && budget.items_count === 0) throw unprocessable('Inclua ao menos um procedimento para aprovar.');
-    await trx('budgets').where({ id }).update({ status, approved_at: status === 'approved' ? new Date() : null, updated_at: new Date() });
+    if (status === 'approved') {
+      if (budget.items_count === 0) throw unprocessable('Inclua ao menos um procedimento para aprovar.');
+      // aprovar o orçamento inteiro = uma rodada com todos os itens e o desconto combinado no orçamento
+      const ids = (await trx('budget_items').where({ budget_id: id, status: 'pending' }).whereNull('approval_id').select('id')).map((row) => row.id);
+      await createApproval(trx, auth, budget, { itemIds: ids, discountCents: budget.discount_cents });
+    } else {
+      await trx('budgets').where({ id }).update({ status, approved_at: null, updated_at: new Date() });
+    }
     return detail(trx, auth, id);
   });
 }
 
-// ---- itens (só enquanto o orçamento está em aberto) ----
+// ---- rodadas de aprovação ----
+
+// o desconto do orçamento passa a ser a soma dos descontos das rodadas (relatórios e repasses continuam lendo daqui)
+async function syncBudgetDiscount(trx, budgetId) {
+  const [{ sum }] = await trx('budget_approvals').where({ budget_id: budgetId }).sum({ sum: 'discount_cents' });
+  await trx('budgets').where({ id: budgetId }).update({ discount_cents: Number(sum) });
+}
+
+async function createApproval(trx, auth, budget, { itemIds, discountCents, notes }) {
+  const items = await trx('budget_items').where({ budget_id: budget.id }).whereIn('id', itemIds).select('id', 'status', 'approval_id', 'price_cents');
+  if (items.length !== new Set(itemIds).size) throw notFound('Item do orçamento');
+  if (items.some((item) => item.status !== 'pending')) throw conflict('Só procedimentos pendentes podem ser aprovados.', { code: 'ITEM_NOT_PENDING' });
+  if (items.some((item) => item.approval_id)) throw conflict('Este procedimento já foi aprovado pelo paciente.', { code: 'ITEM_ALREADY_APPROVED' });
+  assertDiscount(items.reduce((sum, item) => sum + item.price_cents, 0), discountCents);
+
+  const [{ id }] = await trx('budget_approvals')
+    .insert({ clinic_id: auth.clinicId, budget_id: budget.id, discount_cents: discountCents, notes: notes ?? null, approved_by: auth.userId })
+    .returning('id');
+  await trx('budget_items').whereIn('id', itemIds).update({ approval_id: id, updated_at: new Date() });
+  await syncBudgetDiscount(trx, budget.id);
+  await trx('budgets').where({ id: budget.id }).update({ status: 'approved', approved_at: budget.approved_at ?? new Date(), updated_at: new Date() });
+  await recordAudit(trx, { clinicId: auth.clinicId, userId: auth.userId, entity: 'budget_approval', entityId: id, action: 'create', changes: { budgetId: budget.id, items: itemIds.length, discountCents } });
+  return id;
+}
+
+/** O paciente aprovou alguns procedimentos (agora ou depois): nasce uma rodada com desconto próprio, sem mexer nas anteriores. */
+export function approveItems(auth, id, input) {
+  return withTenant(auth.clinicId, async (trx) => {
+    const budget = await loadBudget(trx, auth, id);
+    assertEditable(budget);
+    await createApproval(trx, auth, budget, input);
+    return detail(trx, auth, id);
+  });
+}
+
+// ---- itens (enquanto propostos, com o orçamento em aberto ou em tratamento) ----
 
 export function addItem(auth, id, input) {
   return withTenant(auth.clinicId, async (trx) => {
-    assertOpen(await loadBudget(trx, auth, id));
+    assertEditable(await loadBudget(trx, auth, id));
     const procedure = (await loadProcedures(trx, [input.procedureId])).get(input.procedureId);
     const [{ max }] = await trx('budget_items').where({ budget_id: id }).max({ max: 'position' });
     await trx('budget_items').insert({
@@ -190,12 +250,13 @@ export function addItem(auth, id, input) {
 export function updateItem(auth, id, itemId, changes) {
   return withTenant(auth.clinicId, async (trx) => {
     const budget = await loadBudget(trx, auth, id);
-    assertOpen(budget);
+    assertEditable(budget);
     const item = await loadItem(trx, id, itemId);
+    assertProposed(item);
 
     const next = { tooth: item.tooth, faces: item.faces, price_cents: item.price_cents, ...toColumns(changes) };
     if (next.faces && !next.tooth) throw unprocessable('Informe o dente para indicar as faces.');
-    assertDiscount(budget.subtotal - item.price_cents + next.price_cents, budget.discount_cents);
+    if (budget.status === 'open') assertDiscount(budget.subtotal - item.price_cents + next.price_cents, budget.discount_cents);
 
     await trx('budget_items').where({ id: itemId }).update({ ...next, updated_at: new Date() });
     return detail(trx, auth, id);
@@ -205,46 +266,68 @@ export function updateItem(auth, id, itemId, changes) {
 export function removeItem(auth, id, itemId) {
   return withTenant(auth.clinicId, async (trx) => {
     const budget = await loadBudget(trx, auth, id);
-    assertOpen(budget);
+    assertEditable(budget);
     const item = await loadItem(trx, id, itemId);
-    assertDiscount(budget.subtotal - item.price_cents, budget.discount_cents);
+    assertProposed(item);
+    if (budget.status === 'open') assertDiscount(budget.subtotal - item.price_cents, budget.discount_cents);
     await trx('budget_items').where({ id: itemId }).del();
+    if (budget.status === 'approved') await completeIfFinished(trx, id);
     return detail(trx, auth, id);
   });
 }
 
 // ---- execução (orçamento aprovado) ----
 
-/**
- * Registra que o procedimento foi realizado: guarda quem executou (base do repasse) e, se o procedimento
- * tem condição de odontograma e o item tem dente, marca o dente do paciente automaticamente.
- */
-export function performItem(auth, id, itemId, { dentistId, performedAt }) {
-  return withTenant(auth.clinicId, async (trx) => {
-    const budget = await loadBudget(trx, auth, id);
-    assertApproved(budget);
-    const item = await loadItem(trx, id, itemId);
-    if (item.status !== 'pending') throw conflict('Este procedimento já foi finalizado.', { code: 'ITEM_NOT_PENDING' });
-
-    const own = await ownDentistId(trx, auth);
-    if (own && dentistId && dentistId !== own) throw forbidden('O dentista só registra procedimentos executados por ele.');
-    const performer = own ?? dentistId ?? budget.dentist_id;
-    await assertActiveDentist(trx, performer);
-
-    const when = performedAt ? new Date(performedAt) : new Date();
-    await trx('budget_items').where({ id: itemId }).update({
-      status: 'done', performed_by_dentist_id: performer, performed_at: when, updated_at: new Date(),
-    });
-    if (item.tooth && item.odontogram_condition) {
-      await trx('tooth_records').insert({
-        clinic_id: auth.clinicId, patient_id: budget.patient_id, tooth: item.tooth, faces: item.faces,
-        condition: item.odontogram_condition, source_item_id: item.id, recorded_by: auth.userId, recorded_on: businessDate(when),
-      });
-    }
-    await recordExecution(trx, { auth, budget, item, dentistId: performer, performedAt: when });
-    await completeIfFinished(trx, id);
-    return detail(trx, auth, id);
+// dá baixa no item: guarda quem executou, marca o dente no odontograma e gera o repasse
+async function executeItem(trx, auth, { budget, item, performer, when }) {
+  await trx('budget_items').where({ id: item.id }).update({
+    status: 'done', performed_by_dentist_id: performer, performed_at: when, updated_at: new Date(),
   });
+  if (item.tooth && item.odontogram_condition) {
+    await trx('tooth_records').insert({
+      clinic_id: auth.clinicId, patient_id: budget.patient_id, tooth: item.tooth, faces: item.faces,
+      condition: item.odontogram_condition, source_item_id: item.id, recorded_by: auth.userId, recorded_on: businessDate(when),
+    });
+  }
+  // o repasse segue o desconto da rodada em que o item foi aprovado, não o das outras
+  const [round] = await trx('budget_items')
+    .join('budget_approvals', 'budget_approvals.id', 'budget_items.approval_id')
+    .leftJoin(trx('budget_items as peers').where('peers.status', '<>', 'canceled').groupBy('peers.approval_id').select('peers.approval_id').sum({ subtotal: 'peers.price_cents' }).as('totals'), 'totals.approval_id', 'budget_approvals.id')
+    .where('budget_items.id', item.id)
+    .select('budget_approvals.discount_cents', trx.raw('coalesce(totals.subtotal, 0)::int AS subtotal'));
+  await recordExecution(trx, { auth, budget: { ...budget, subtotal: round.subtotal, discount_cents: round.discount_cents }, item, dentistId: performer, performedAt: when });
+  await completeIfFinished(trx, budget.id);
+}
+
+/**
+ * Dá baixa em itens de orçamentos aprovados do paciente durante o atendimento (usado pela evolução clínica).
+ * Devolve os itens executados, com procedimento, dente e faces, para entrarem no registro.
+ */
+export async function performItemsDuringAppointment(trx, auth, { patientId, items, dentistId }) {
+  const done = [];
+  const when = new Date();
+  for (const { itemId, teeth, wholeMouth } of items) {
+    const found = await trx('budget_items')
+      .join('budgets', 'budgets.id', 'budget_items.budget_id')
+      .join('procedures', 'procedures.id', 'budget_items.procedure_id')
+      .where({ 'budget_items.id': itemId, 'budgets.patient_id': patientId })
+      .first('budget_items.*', 'budgets.id as budget_ref', 'procedures.odontogram_condition', 'procedures.name as procedure_name');
+    if (!found) throw notFound('Item do orçamento');
+    // o dente do item vale; se o item não tem dente, o dentista diz onde foi feito
+    if (found.tooth && (teeth || wholeMouth)) throw unprocessable('Este item do orçamento já tem dente definido.');
+    if (!found.tooth && !teeth && !wholeMouth) throw unprocessable(`Informe os dentes afetados em "${found.procedure_name}" ou marque boca toda.`, { code: 'TEETH_REQUIRED' });
+    // qualquer dentista da clínica executa o que o paciente aprovou, mesmo em orçamento de outro dentista (sem filtro de carteira)
+    const budget = await findBudgetSummary(trx, found.budget_ref);
+    assertApproved(budget);
+    if (found.status !== 'pending') throw conflict('Este procedimento já foi finalizado.', { code: 'ITEM_NOT_PENDING' });
+    if (!found.approval_id) throw conflict('O paciente ainda não aprovou este procedimento.', { code: 'ITEM_NOT_APPROVED' });
+    await executeItem(trx, auth, { budget, item: found, performer: dentistId, when });
+    const base = { procedureId: found.procedure_id, procedureName: found.procedure_name, faces: found.faces, budgetItemId: found.id };
+    if (found.tooth) done.push({ ...base, tooth: found.tooth, wholeMouth: false });
+    else if (wholeMouth) done.push({ ...base, tooth: null, wholeMouth: true });
+    else for (const tooth of teeth) done.push({ ...base, tooth, wholeMouth: false });
+  }
+  return done;
 }
 
 /** O paciente desistiu de um procedimento já aprovado. */

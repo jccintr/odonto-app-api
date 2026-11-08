@@ -7,6 +7,26 @@ const assertPatient = async (trx, patientId) => {
   if (!(await trx('patients').where({ id: patientId }).first('id'))) throw notFound('Paciente');
 };
 
+/**
+ * Camada "planejado": procedimentos com dente ainda não executados, dos orçamentos em aberto ou em tratamento.
+ * `approved` diferencia o que o paciente já aprovou do que está só proposto. Não traz valores.
+ */
+async function plannedByTooth(trx, patientId) {
+  const rows = await trx('budget_items')
+    .join('budgets', 'budgets.id', 'budget_items.budget_id')
+    .join('procedures', 'procedures.id', 'budget_items.procedure_id')
+    .where({ 'budgets.patient_id': patientId, 'budget_items.status': 'pending' })
+    .whereIn('budgets.status', ['open', 'approved'])
+    .whereNotNull('budget_items.tooth')
+    .orderBy([{ column: 'budget_items.tooth' }, { column: 'budgets.created_at' }, { column: 'budget_items.position' }])
+    .select('budget_items.id', 'budget_items.tooth', 'budget_items.faces', 'budget_items.approval_id', 'procedures.id as procedure_id', 'procedures.name as procedure_name');
+  const planned = {};
+  for (const row of rows) {
+    (planned[row.tooth] ??= []).push({ itemId: row.id, procedure: { id: row.procedure_id, name: row.procedure_name }, faces: row.faces, approved: Boolean(row.approval_id) });
+  }
+  return planned;
+}
+
 /** Odontograma atual: marcações não removidas, agrupadas por dente. Cada leitura é auditada. */
 export function getOdontogram(auth, patientId) {
   return withTenant(auth.clinicId, async (trx) => {
@@ -19,7 +39,7 @@ export function getOdontogram(auth, patientId) {
 
     const teeth = {};
     for (const row of rows) (teeth[row.tooth] ??= []).push(toToothRecordDto(row));
-    return { patientId, teeth };
+    return { patientId, teeth, planned: await plannedByTooth(trx, patientId) };
   });
 }
 
