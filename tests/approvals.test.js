@@ -89,15 +89,14 @@ describe('POST /api/budgets/:id/approvals', () => {
     expect((await approve(c, b, { itemIds: [b.items[0].id] })).body.code).toBe('BUDGET_NOT_OPEN');
   });
 
-  it('o dentista aprova só na própria carteira; a secretária registra a aprovação', async () => {
+  it('a aprovação é da recepção: secretária e administrador registram; o dentista não (403)', async () => {
     const c = await setup();
     const b = await proposal(c);
     const secretary = await setupUser({ role: 'secretary', clinic: c.clinic });
     expect((await api().post(`/api/budgets/${b.id}/approvals`).set(secretary.headers).send({ itemIds: [b.items[0].id] })).status).toBe(201);
+    expect((await api().post(`/api/budgets/${b.id}/approvals`).set(c.headers).send({ itemIds: [b.items[1].id] })).status).toBe(201);
     const ownHeaders = await headersOf(c.dentist.user);
-    expect((await api().post(`/api/budgets/${b.id}/approvals`).set(ownHeaders).send({ itemIds: [b.items[1].id] })).status).toBe(201);
-    const strangerHeaders = await headersOf(c.other.user);
-    expect((await api().post(`/api/budgets/${b.id}/approvals`).set(strangerHeaders).send({ itemIds: [b.items[2].id] })).status).toBe(404);
+    expect((await api().post(`/api/budgets/${b.id}/approvals`).set(ownHeaders).send({ itemIds: [b.items[2].id] })).status).toBe(403);
   });
 
   it('em tratamento ainda dá para ajustar o dente do que está só proposto, sem mexer no aprovado', async () => {

@@ -344,11 +344,12 @@ describe('POST /api/budgets/:id/status', () => {
     expect((await status(c.headers, empty.id, 'approved')).status).toBe(422);
   });
 
-  it('dentista não decide orçamento de outro (404); outra clínica: 404', async () => {
+  it('o dentista não decide orçamento nenhum (403); outra clínica: 404', async () => {
     const c = await setup();
     const other = await createDentist(c.clinic);
     const theirs = (await make(c, { dentistId: other.dentist.id })).body;
-    expect((await status(await dentistHeaders(c.dentist.user), theirs.id, 'approved')).status).toBe(404);
+    expect((await status(await dentistHeaders(c.dentist.user), theirs.id, 'approved')).status).toBe(403);
+    expect((await status(await dentistHeaders(other.user), theirs.id, 'rejected')).status).toBe(403); // nem o do próprio dentista
     const foreign = await setup();
     expect((await status(foreign.headers, theirs.id, 'approved')).status).toBe(404);
     expect((await status(c.headers, 'abc', 'approved')).status).toBe(400);

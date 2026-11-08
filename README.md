@@ -108,8 +108,8 @@ Banco e schema únicos. Toda tabela de dados de clínica tem `clinic_id` e **Row
 | GET | `/api/budgets`, `/api/budgets/:id` | logado | Orçamentos (resumo na lista; com itens, subtotal e total no detalhe) |
 | POST, PATCH | `/api/budgets`, `/api/budgets/:id` | admin, dentista | Criar com itens (procedimento + dente + faces) e alterar desconto/observações |
 | POST, PATCH, DELETE | `/api/budgets/:id/items[/:itemId]` | admin, dentista | Incluir, alterar e remover itens (enquanto só propostos, com o orçamento em aberto ou em tratamento) |
-| POST | `/api/budgets/:id/status` | logado | Aprovar tudo de uma vez, recusar ou reabrir (a secretária registra a decisão) |
-| POST | `/api/budgets/:id/approvals` | logado | Rodada de aprovação: o paciente aprova alguns itens, com desconto próprio (pode haver várias rodadas) |
+| POST | `/api/budgets/:id/status` | admin, secretária | Aprovar tudo de uma vez, recusar ou reabrir (a recepção registra a decisão do paciente; o dentista não) |
+| POST | `/api/budgets/:id/approvals` | admin, secretária | Rodada de aprovação: o paciente aprova alguns itens, com desconto próprio (pode haver várias rodadas) |
 | GET | `/api/worklist` | admin, secretária | Lista de trabalho da recepção: aprovados sem consulta, orçamentos sem resposta, inadimplentes com consulta |
 | GET | `/api/patients/:id/treatment-items` | logado | Procedimentos aprovados e a realizar do paciente, de todos os dentistas (sem valores) |
 | GET | `/api/patients/:id/standing` | admin, secretária | Situação financeira do paciente (bloqueado por inadimplência?) |

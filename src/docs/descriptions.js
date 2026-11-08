@@ -264,12 +264,12 @@ export const DOCS = {
   },
   'POST /api/budgets/:id/status': {
     summary: 'Aprovar, recusar ou reabrir', status: 200, response: ref('Orcamento'),
-    description: 'Todos os perfis registram a decisão. `open` → `approved` ou `rejected`; `rejected` → `open`. Aprovar aqui aprova **todos** os itens de uma vez, numa única rodada, com o desconto do orçamento; para aprovar só parte, ou aprovar mais depois, use `POST /api/budgets/:id/approvals`. Aprovado não volta. O estado `completed` é automático e não é aceito aqui.',
+    description: 'A decisão do paciente é registrada pela recepção (administrador e secretária), não pelo dentista. `open` → `approved` ou `rejected`; `rejected` → `open`. Aprovar aqui aprova **todos** os itens de uma vez, numa única rodada, com o desconto do orçamento; para aprovar só parte, ou aprovar mais depois, use `POST /api/budgets/:id/approvals`. Aprovado não volta. O estado `completed` é automático e não é aceito aqui.',
     errors: { 409: 'Transição inválida (`INVALID_TRANSITION`).', 422: 'Inclua ao menos um procedimento para aprovar.' },
   },
   'POST /api/budgets/:id/approvals': {
     summary: 'Registrar uma rodada de aprovação', status: 201, response: ref('Orcamento'),
-    description: 'O paciente aprovou alguns procedimentos (agora ou em outro dia). Informe os `itemIds` e o `discountCents` combinado **para esses itens**: cada rodada tem desconto e parcelas próprios e não mexe nas anteriores. Os itens passam a "a realizar" (podem ser executados nos atendimentos e cobrados) e o orçamento fica em tratamento. Todos os perfis registram a aprovação.',
+    description: 'O paciente aprovou alguns procedimentos (agora ou em outro dia). Informe os `itemIds` e o `discountCents` combinado **para esses itens**: cada rodada tem desconto e parcelas próprios e não mexe nas anteriores. Os itens passam a "a realizar" (podem ser executados nos atendimentos e cobrados) e o orçamento fica em tratamento. Quem registra é a recepção (administrador e secretária), não o dentista.',
     errors: { 404: 'Orçamento ou item não encontrado.', 409: 'Orçamento recusado/concluído (`BUDGET_NOT_OPEN`), item não pendente (`ITEM_NOT_PENDING`) ou já aprovado (`ITEM_ALREADY_APPROVED`).', 422: 'Desconto maior que o valor dos itens escolhidos.' },
   },
   'POST /api/budgets/:id/items': {

@@ -8,7 +8,8 @@ import {
 } from './budgets.schemas.js';
 
 const router = Router();
-const clinical = requireRole('admin', 'dentist'); // quem monta e executa orçamentos; a secretária consulta e registra aprovação
+const clinical = requireRole('admin', 'dentist'); // quem monta orçamentos (o dentista avalia; o preço vem da tabela da clínica)
+const reception = requireRole('admin', 'secretary'); // quem registra a resposta do paciente: aprovar, recusar, reabrir
 
 // Orçamentos: admin e secretária veem todos; o dentista só os próprios (regra aplicada no serviço).
 router.use(authenticate);
@@ -25,10 +26,10 @@ router.get('/:id', validate({ params: budgetParams }), async (req, res) => {
 router.patch('/:id', clinical, validate({ params: budgetParams, body: updateBudgetSchema }), async (req, res) => {
   res.json(await service.updateBudget(req.auth, req.valid.params.id, req.valid.body));
 });
-router.post('/:id/status', validate({ params: budgetParams, body: changeStatusSchema }), async (req, res) => {
+router.post('/:id/status', reception, validate({ params: budgetParams, body: changeStatusSchema }), async (req, res) => {
   res.json(await service.changeStatus(req.auth, req.valid.params.id, req.valid.body));
 });
-router.post('/:id/approvals', validate({ params: budgetParams, body: approveItemsSchema }), async (req, res) => {
+router.post('/:id/approvals', reception, validate({ params: budgetParams, body: approveItemsSchema }), async (req, res) => {
   res.status(201).json(await service.approveItems(req.auth, req.valid.params.id, req.valid.body));
 });
 
