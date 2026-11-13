@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from 'vitest';
 import db from '../src/db/knex.js';
 import { createClinic as createClinicService, createPlatformAdmin } from '../src/modules/platform/platform.service.js';
 import { sendVerificationEmail } from '../src/services/mailer.js';
-import { api, bearer, createClinic, createUser, createPlatformAdmin as makeAdmin, PASSWORD, platformSession, setupUser } from './helpers/factories.js';
+import { api, bearer, createClinic, createDentist, createPatient, createUser, createPlatformAdmin as makeAdmin, PASSWORD, platformSession, setupUser } from './helpers/factories.js';
 
 const newClinic = (o = {}) => ({
   name: 'Clínica Sorriso & Cia',
@@ -159,6 +159,27 @@ describe('listar, consultar e alterar clínicas', () => {
     expect((await api().get(`/api/platform/clinics/${clinic.id}`).set(headers)).body.id).toBe(clinic.id);
     expect((await api().get('/api/platform/clinics/00000000-0000-4000-8000-000000000000').set(headers)).status).toBe(404);
     expect((await api().get('/api/platform/clinics/abc').set(headers)).status).toBe(400);
+  });
+
+  it('o detalhe da clínica traz só as quantidades de dentistas, secretárias, administradores e pacientes ativos', async () => {
+    const { headers } = await platformSession();
+    const clinic = await createClinic();
+    const other = await createClinic();
+    await createDentist(clinic);
+    await createDentist(clinic);
+    await createDentist(clinic, { active: false });
+    await createUser(clinic, { role: 'secretary' });
+    await createUser(clinic, { role: 'admin' });
+    await createPatient(clinic);
+    await createPatient(clinic);
+    await createPatient(clinic);
+    await createPatient(clinic, { active: false });
+    await createDentist(other);
+    await createPatient(other);
+    const res = await api().get(`/api/platform/clinics/${clinic.id}`).set(headers);
+    expect(res.status).toBe(200);
+    expect(res.body.usage).toEqual({ dentists: 2, secretaries: 1, admins: 1, patients: 3 });
+    expect((await api().get(`/api/platform/clinics/${other.id}`).set(headers)).body.usage).toEqual({ dentists: 1, secretaries: 0, admins: 0, patients: 1 });
   });
 
   it('altera nome, documento e plano', async () => {

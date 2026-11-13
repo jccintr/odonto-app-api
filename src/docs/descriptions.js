@@ -430,7 +430,10 @@ export const DOCS = {
     description: 'Cria a clínica e o administrador na mesma transação e envia o e-mail de verificação (o administrador só entra depois de confirmar). O `slug` é gerado do nome se não for informado.',
     errors: { 409: 'Slug já em uso ou e-mail do administrador já cadastrado.' },
   },
-  'GET /api/platform/clinics/:id': { summary: 'Consultar clínica', status: 200, response: ref('ClinicaPlataforma') },
+  'GET /api/platform/clinics/:id': {
+    summary: 'Consultar clínica', status: 200, response: ref('ClinicaPlataformaDetalhe'),
+    description: 'Além do resumo da assinatura, traz `usage`: quantos dentistas, secretárias, administradores e pacientes ativos a clínica tem (só quantidades).',
+  },
   'GET /api/platform/clinics/:id/billing': {
     summary: 'Assinatura da clínica', status: 200, response: ref('AssinaturaPlataforma'),
     description: 'Situação, plano, fatura em aberto (com Pix), faturas pagas e os últimos eventos de cobrança (auditoria).',

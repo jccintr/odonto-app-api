@@ -62,6 +62,13 @@ const invoiceProps = {
   reportedPaidAt: nDateTime, reportedNote: nstr, paidAt: nDateTime, paymentNote: nstr, createdAt: dateTime, pix: nullable('Pix'),
 };
 
+const clinicaPlataformaProps = {
+  id: uuid, name: str, slug: str, document: nstr, plan: str, status: enumOf(['active', 'suspended']), overdueGraceDays: int, cashDiscountPercent: int, createdAt: dateTime, updatedAt: dateTime,
+  subscription: obj({
+      ...statusProps, planName: nstr, deletionRequestedAt: nDateTime, templateCode: { type: ['string', 'null'], description: 'Modelo escolhido no cadastro; null = criada pela plataforma.' },
+  }),
+};
+
 export const SCHEMAS = {
   Erro: {
     type: 'object',
@@ -127,11 +134,10 @@ export const SCHEMAS = {
   }),
   Perfil: obj({ user: ref('Usuario'), clinic: ref('Clinica') }),
   AdminPlataforma: obj({ id: uuid, name: str, email: str, active: bool }),
-  ClinicaPlataforma: obj({
-    id: uuid, name: str, slug: str, document: nstr, plan: str, status: enumOf(['active', 'suspended']), overdueGraceDays: int, cashDiscountPercent: int, createdAt: dateTime, updatedAt: dateTime,
-    subscription: obj({
-      ...statusProps, planName: nstr, deletionRequestedAt: nDateTime, templateCode: { type: ['string', 'null'], description: 'Modelo escolhido no cadastro; null = criada pela plataforma.' },
-    }),
+  ClinicaPlataforma: obj(clinicaPlataformaProps),
+  ClinicaPlataformaDetalhe: obj({
+    ...clinicaPlataformaProps,
+    usage: obj({ dentists: int, secretaries: int, admins: int, patients: int }, 'Quantidade de cadastros ativos da clínica (só números, sem dados pessoais).'),
   }),
   VisaoGeral: obj({
     clinics: obj({ total: int, suspendedManually: int, byState: obj(Object.fromEntries(BILLING_STATES.map((state) => [state, int]))) }),
