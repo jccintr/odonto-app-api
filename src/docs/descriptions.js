@@ -432,7 +432,7 @@ export const DOCS = {
   },
   'GET /api/platform/clinics/:id': {
     summary: 'Consultar clínica', status: 200, response: ref('ClinicaPlataformaDetalhe'),
-    description: 'Além do resumo da assinatura, traz `usage`: quantos dentistas, secretárias, administradores e pacientes ativos a clínica tem (só quantidades).',
+    description: 'Além do resumo da assinatura, traz `usage`: quantos dentistas, secretárias, administradores e pacientes ativos a clínica tem e quantos agendamentos (não cancelados, no total e nos últimos 30 dias). Só quantidades.',
   },
   'GET /api/platform/clinics/:id/billing': {
     summary: 'Assinatura da clínica', status: 200, response: ref('AssinaturaPlataforma'),

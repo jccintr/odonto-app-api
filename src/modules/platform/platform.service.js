@@ -85,11 +85,16 @@ export async function listClinics({ status, billing, q, ...paging }) {
   return pageResult(rows.map((row) => toPlatformClinicDto(row, today)), Number(count), paging);
 }
 
-/** Quantidades de cadastros ativos da clínica (só números: o backoffice não vê dados de pacientes nem de usuários). */
+/** Quantidades de cadastros ativos e de agendamentos da clínica (só números: o backoffice não vê dados de pacientes nem de usuários). */
 async function clinicUsage(clinicId) {
-  const [people, patients] = await Promise.all([
+  const [people, patients, appointments] = await Promise.all([
     db('users').where({ clinic_id: clinicId, active: true }).select('role').count({ count: '*' }).groupBy('role'),
     db('patients').where({ clinic_id: clinicId, active: true }).count({ count: '*' }).first(),
+    // agendamentos não cancelados: no total e criados nos últimos 30 dias (pela data do cadastro do agendamento, assim contam também os marcados para o futuro)
+    db('appointments').where({ clinic_id: clinicId }).whereNot('status', 'canceled').select(
+      db.raw('count(*)::int AS total'),
+      db.raw("count(*) FILTER (WHERE created_at >= now() - interval '30 days')::int AS last30"),
+    ).first(),
   ]);
   const byRole = Object.fromEntries(people.map((r) => [r.role, Number(r.count)]));
   return {
@@ -97,6 +102,8 @@ async function clinicUsage(clinicId) {
     secretaries: byRole.secretary ?? 0,
     admins: byRole.admin ?? 0,
     patients: Number(patients.count),
+    appointments: appointments.total,
+    appointmentsLast30Days: appointments.last30,
   };
 }
 

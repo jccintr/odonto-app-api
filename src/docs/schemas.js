@@ -137,7 +137,7 @@ export const SCHEMAS = {
   ClinicaPlataforma: obj(clinicaPlataformaProps),
   ClinicaPlataformaDetalhe: obj({
     ...clinicaPlataformaProps,
-    usage: obj({ dentists: int, secretaries: int, admins: int, patients: int }, 'Quantidade de cadastros ativos da clínica (só números, sem dados pessoais).'),
+    usage: obj({ dentists: int, secretaries: int, admins: int, patients: int, appointments: int, appointmentsLast30Days: int }, 'Cadastros ativos e agendamentos não cancelados da clínica (só números, sem dados pessoais). `appointmentsLast30Days` conta os agendamentos cadastrados nos últimos 30 dias (inclusive os marcados para o futuro).'),
   }),
   VisaoGeral: obj({
     clinics: obj({ total: int, suspendedManually: int, byState: obj(Object.fromEntries(BILLING_STATES.map((state) => [state, int]))) }),

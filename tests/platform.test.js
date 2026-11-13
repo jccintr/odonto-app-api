@@ -174,12 +174,21 @@ describe('listar, consultar e alterar clínicas', () => {
     await createPatient(clinic);
     await createPatient(clinic);
     await createPatient(clinic, { active: false });
-    await createDentist(other);
-    await createPatient(other);
+    const { dentist } = await createDentist(other);
+    const otherPatient = await createPatient(other);
+    // `createdDaysAgo`: quando o agendamento foi cadastrado; `startsInDays`: quando será o atendimento (pode ser no futuro)
+    const slot = (createdDaysAgo, startsInDays, status = 'scheduled') => {
+      const start = new Date(Date.now() + startsInDays * 86_400_000);
+      return {
+        clinic_id: other.id, patient_id: otherPatient.id, dentist_id: dentist.id, starts_at: start, ends_at: new Date(start.getTime() + 3_600_000),
+        status, created_at: new Date(Date.now() - createdDaysAgo * 86_400_000),
+      };
+    };
+    await db('appointments').insert([slot(2, 7), slot(10, -3, 'attended'), slot(60, -50), slot(5, 9, 'canceled')]);
     const res = await api().get(`/api/platform/clinics/${clinic.id}`).set(headers);
     expect(res.status).toBe(200);
-    expect(res.body.usage).toEqual({ dentists: 2, secretaries: 1, admins: 1, patients: 3 });
-    expect((await api().get(`/api/platform/clinics/${other.id}`).set(headers)).body.usage).toEqual({ dentists: 1, secretaries: 0, admins: 0, patients: 1 });
+    expect(res.body.usage).toEqual({ dentists: 2, secretaries: 1, admins: 1, patients: 3, appointments: 0, appointmentsLast30Days: 0 });
+    expect((await api().get(`/api/platform/clinics/${other.id}`).set(headers)).body.usage).toEqual({ dentists: 1, secretaries: 0, admins: 0, patients: 1, appointments: 3, appointmentsLast30Days: 2 });
   });
 
   it('altera nome, documento e plano', async () => {
