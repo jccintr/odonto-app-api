@@ -1,6 +1,6 @@
 import { Router } from 'express';
 import { validate } from '../../middlewares/validate.js';
-import { authenticate, requireRole } from '../../middlewares/auth.js';
+import { authenticate, requireClinicalProfile, requireRole } from '../../middlewares/auth.js';
 import { addAddendum, listEvolutions } from './evolutions.service.js';
 import { addendumSchema, evolutionParams, listEvolutionsQuery, patientParams } from './evolutions.schemas.js';
 
@@ -12,7 +12,8 @@ router.use(authenticate);
 router.get('/', requireRole('admin', 'dentist'), validate({ params: patientParams, query: listEvolutionsQuery }), async (req, res) => {
   res.json(await listEvolutions(req.auth, req.valid.params.patientId, req.valid.query));
 });
-router.post('/:id/addendum', requireRole('dentist'), validate({ params: evolutionParams, body: addendumSchema }), async (req, res) => {
+// quem retifica é o dentista que fez o registro (pode ser um administrador que também atende): o serviço confere a autoria
+router.post('/:id/addendum', requireClinicalProfile, validate({ params: evolutionParams, body: addendumSchema }), async (req, res) => {
   res.status(201).json(await addAddendum(req.auth, req.valid.params.patientId, req.valid.params.id, req.valid.body));
 });
 

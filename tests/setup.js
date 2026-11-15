@@ -18,6 +18,7 @@ vi.mock('../src/services/mailer.js', async (importOriginal) => ({
   ...(await importOriginal()),
   sendVerificationEmail: vi.fn(),
   sendPasswordResetEmail: vi.fn(),
+  sendInviteEmail: vi.fn(),
   sendAppointmentReminderEmail: vi.fn(),
   sendBudgetEmail: vi.fn(),
   sendOwnerNotice: vi.fn(),
@@ -39,6 +40,7 @@ beforeEach(async () => {
   loginThrottle.clear();
   mailer.sendVerificationEmail.mockReset().mockResolvedValue({});
   mailer.sendPasswordResetEmail.mockReset().mockResolvedValue({});
+  mailer.sendInviteEmail.mockReset().mockResolvedValue({});
   mailer.sendAppointmentReminderEmail.mockReset().mockResolvedValue({});
   mailer.sendBudgetEmail.mockReset().mockResolvedValue({});
   mailer.sendOwnerNotice.mockReset().mockResolvedValue({});

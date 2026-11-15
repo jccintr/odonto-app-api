@@ -97,7 +97,10 @@ function responsesFor(route, doc) {
 
 function accessText(route) {
   if (route.auth === 'platform') return 'Acesso: administradores da plataforma.';
-  if (route.auth === 'clinic') return `Acesso: ${(route.roles ?? Object.keys(ROLE_NAMES)).map((role) => ROLE_NAMES[role]).join(', ')}.`;
+  if (route.auth === 'clinic') {
+    const names = (route.roles ?? Object.keys(ROLE_NAMES)).map((role) => ROLE_NAMES[role]).join(', ');
+    return `Acesso: ${names}${route.attendingAdmin ? ' (inclusive o administrador que também atende pacientes)' : ''}.`;
+  }
   return 'Acesso: público (não exige login).';
 }
 
@@ -126,7 +129,7 @@ const INFO_DESCRIPTION = `API do OdontoApp: sistema multi-clínica de gestão od
 3. Envie o \`accessToken\` em todas as chamadas: \`Authorization: Bearer <accessToken>\`. Ele dura pouco; renove com \`POST /api/auth/refresh\`.
 
 ## Convenções
-- **Perfis:** \`admin\` (administrador da clínica), \`secretary\` (secretária) e \`dentist\` (dentista). Cada rota informa quem pode chamá-la.
+- **Perfis:** \`admin\` (administrador da clínica), \`secretary\` (secretária) e \`dentist\` (dentista). Cada rota informa quem pode chamá-la. O perfil é **por clínica**: a conta (e-mail e senha) é da pessoa, que pode trabalhar em várias clínicas (\`GET /api/auth/clinics\`, \`POST /api/auth/switch-clinic\`). O administrador pode também atender pacientes (\`attendsPatients\`); aí ele aparece em Dentistas e faz o que só o dentista do atendimento faz (iniciar, concluir e registrar a evolução).
 - **Isolamento:** cada clínica só enxerga os próprios dados. Ids de outra clínica respondem **404**, nunca 403, para não revelar que existem. 403 é "você não pode fazer isto".
 - **Erros:** sempre \`{ "error": "mensagem" }\`, às vezes com \`code\` (regra de negócio) e \`details\` (campos inválidos).
 - **Listas paginadas:** \`?page=1&perPage=20\` → \`{ data, page, perPage, total, totalPages }\`.

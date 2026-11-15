@@ -64,7 +64,8 @@ export const DEMO = {
 await db('platform_admins').insert({ name: DEMO.platform.name, email: DEMO.platform.email, password_hash: await hashPassword(DEMO.platform.password) });
 const [clinic] = await db('clinics').insert({ name: DEMO.clinic, slug: 'sorriso' }).returning('*');
 const user = async (u, role) => {
-  const [row] = await db('users').insert({ clinic_id: clinic.id, name: u.name, email: u.email, role, email_verified_at: new Date(), password_hash: await hashPassword(u.password) }).returning('*');
+  const [row] = await db('users').insert({ name: u.name, email: u.email, email_verified_at: new Date(), password_hash: await hashPassword(u.password) }).returning('*');
+  await db('memberships').insert({ clinic_id: clinic.id, user_id: row.id, role, accepted_at: new Date() });
   return row;
 };
 await user(DEMO.admin, 'admin');

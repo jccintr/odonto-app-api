@@ -83,7 +83,7 @@ describe('limite de dentistas do plano', () => {
     for (let n = 1; n <= 6; n += 1) expect((await addUser(s, 'dentist', n)).status).toBe(201);
   });
 
-  it('plano Essencial: 1 dentista; secretárias e administradores não contam', async () => {
+  it('plano Essencial: 1 dentista; secretárias e administradores que não atendem não contam', async () => {
     const s = await setupUser();
     await onPlan(s, 'essencial');
     expect((await addUser(s, 'secretary', 1)).status).toBe(201);
@@ -92,7 +92,7 @@ describe('limite de dentistas do plano', () => {
     expect(blocked.status).toBe(422);
     expect(blocked.body.code).toBe('PLAN_LIMIT');
     expect(blocked.body.error).toContain('Essencial');
-    expect(await db('users').where({ clinic_id: s.clinic.id, role: 'dentist' })).toHaveLength(1);
+    expect(await db('memberships').where({ clinic_id: s.clinic.id, role: 'dentist' })).toHaveLength(1);
   });
 
   it('plano Premium não tem limite', async () => {

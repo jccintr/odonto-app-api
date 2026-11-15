@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest';
 import db from '../src/db/knex.js';
-import { api, bearer, createClinic, createDentist, createPatient, createProcedure, loginAs, setupUser } from './helpers/factories.js';
+import { api, bearer, createClinic, createDentist, createPatient, createProcedure, loginAs, setupUser, updateMembership } from './helpers/factories.js';
 
 const T = (h, m = 0) => `2099-11-03T${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:00.000Z`;
 const book = (headers, body) => api().post('/api/appointments').set(headers).send(body);
@@ -61,7 +61,7 @@ describe('POST /api/appointments', () => {
     const foreignPatient = await createPatient(await createClinic());
     const foreignDentist = await createDentist(await createClinic());
     const demoted = await createDentist(c.clinic);
-    await db('users').where({ id: demoted.user.id }).update({ role: 'secretary' });
+    await updateMembership(demoted.user, { role: 'secretary' });
     const missing = '00000000-0000-4000-8000-000000000000';
 
     expect((await book(c.headers, slot(c, 9, 10, { patientId: foreignPatient.id }))).status).toBe(404);
@@ -73,7 +73,7 @@ describe('POST /api/appointments', () => {
     await db('patients').where({ id: c.patient.id }).update({ active: false });
     expect((await book(c.headers, slot(c, 9, 10))).status).toBe(422);
     await db('patients').where({ id: c.patient.id }).update({ active: true });
-    await db('users').where({ id: c.dentist.user.id }).update({ active: false });
+    await updateMembership(c.dentist.user, { active: false });
     expect((await book(c.headers, slot(c, 9, 10))).status).toBe(422);
     expect(await db('appointments')).toHaveLength(0);
   });

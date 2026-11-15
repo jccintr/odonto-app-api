@@ -32,7 +32,13 @@ export const ACCESS = {
   'POST /api/auth/resend-verification': { access: 'public' },
   'POST /api/auth/forgot-password': { access: 'public' },
   'POST /api/auth/reset-password': { access: 'public' },
+  'POST /api/auth/accept-invite': { access: 'public' },
   'GET /api/auth/me': { access: ANY, noRefs: true },
+  'PATCH /api/auth/me': { access: ANY, noRefs: true, body: () => ({ name: 'Nome Pelo Perfil' }) },
+  'GET /api/auth/clinics': { access: ANY, noRefs: true },
+  'POST /api/auth/switch-clinic': { access: ANY, noRefs: true, body: (f) => ({ clinicId: f.clinic.id }) },
+  'GET /api/auth/invitations': { access: ANY, noRefs: true },
+  'POST /api/auth/invitations/:clinicId/accept': { access: ANY, params: { clinicId: 'clinic' }, body: () => ({}) },
   'POST /api/auth/change-password': { access: ANY, noRefs: true, body: () => ({ currentPassword: 'senha-errada-1', newPassword: 'nova-senha-123' }) },
   // ---- clínica e usuários ----
   'GET /api/clinic': { access: ANY, noRefs: true },
@@ -43,6 +49,7 @@ export const ACCESS = {
   'POST /api/users': { access: ADMIN, noRefs: true, body: (f) => ({ name: 'Novo Usuário', email: `novo.${f.label}@seg.test`, password: 'senha-segura-123', role: 'secretary' }) },
   'GET /api/users/:id': { access: ADMIN, params: { id: 'target' } },
   'PATCH /api/users/:id': { access: ADMIN, params: { id: 'target' }, body: () => ({ name: 'Nome Alterado' }) },
+  'POST /api/users/:id/resend-invite': { access: ADMIN, params: { id: 'target' }, body: () => ({}) },
   // ---- dentistas e procedimentos ----
   'GET /api/dentists': { access: ANY, noRefs: true },
   'GET /api/dentists/:id': { access: ANY, params: { id: 'dentist' } },

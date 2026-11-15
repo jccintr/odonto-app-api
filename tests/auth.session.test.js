@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import db from '../src/db/knex.js';
 import { hashToken } from '../src/services/tokens.js';
-import { api, bearer, setupUser } from './helpers/factories.js';
+import { api, bearer, setupUser, updateMembership } from './helpers/factories.js';
 
 const refresh = (refreshToken) => api().post('/api/auth/refresh').send({ refreshToken });
 const logout = (refreshToken) => api().post('/api/auth/logout').send({ refreshToken });
@@ -42,7 +42,7 @@ describe('POST /api/auth/refresh', () => {
 
   it('usuário desativado ou clínica suspensa: 403', async () => {
     const a = await setupUser();
-    await db('users').where({ id: a.user.id }).update({ active: false });
+    await updateMembership(a.user, { active: false });
     const inactive = await refresh(a.session.refreshToken);
     expect(inactive.status).toBe(403);
     expect(inactive.body.code).toBe('USER_INACTIVE');

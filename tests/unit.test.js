@@ -3,7 +3,7 @@ import { config, isProduction, required } from '../src/config/env.js';
 import { buildKnexConfig } from '../src/db/config.js';
 import { hashPassword, verifyPassword } from '../src/services/password.js';
 import { generateOpaqueToken, hashToken, signAccessToken, verifyAccessToken } from '../src/services/tokens.js';
-import { toClinicDto, toPlatformAdminDto, toUserDto } from '../src/utils/dto.js';
+import { toClinicDto, toPlatformAdminDto, toToothRecordDto, toUserDto } from '../src/utils/dto.js';
 import { badRequest, conflict, emailNotVerified, forbidden, HttpError, notFound, tooManyRequests, unauthorized } from '../src/utils/errors.js';
 import { createLoginThrottle } from '../src/utils/loginThrottle.js';
 import { escapeLike, pageResult, paginate } from '../src/utils/pagination.js';
@@ -130,13 +130,27 @@ describe('utils/pagination', () => {
 });
 
 describe('utils/dto', () => {
-  const user = { id: 'u', clinic_id: 'c', name: 'Ana', email: 'a@a.com', role: 'admin', active: true, email_verified_at: new Date(), password_hash: 'segredo', created_at: 1, updated_at: 2 };
+  const user = { id: 'u', clinic_id: 'c', name: 'Ana', email: 'a@a.com', role: 'admin', active: true, email_verified_at: new Date(), accepted_at: new Date(), password_hash: 'segredo', created_at: 1, updated_at: 2 };
   it('nunca expõe o hash da senha e resume a verificação de e-mail', () => {
-    expect(toUserDto(user)).toEqual({ id: 'u', clinicId: 'c', name: 'Ana', email: 'a@a.com', role: 'admin', active: true, emailVerified: true, createdAt: 1, updatedAt: 2 });
+    expect(toUserDto(user)).toEqual({
+      id: 'u', clinicId: 'c', name: 'Ana', email: 'a@a.com', phone: null, role: 'admin', active: true,
+      attendsPatients: false, dentistId: null, invitePending: false, emailVerified: true, createdAt: 1, updatedAt: 2,
+    });
     expect(toUserDto({ ...user, email_verified_at: null }).emailVerified).toBe(false);
+    // administrador que também atende: tem perfil clínico; convite pendente: ainda não aceitou
+    expect(toUserDto({ ...user, dentist_id: 'd' })).toMatchObject({ attendsPatients: true, dentistId: 'd' });
+    expect(toUserDto({ ...user, accepted_at: null }).invitePending).toBe(true);
+    expect(toUserDto({ ...user, phone: '35999990000' }).phone).toBe('35999990000');
     expect(toClinicDto({ id: 'c', name: 'N', slug: 's', document: null, plan: 'basic', status: 'active', created_at: 1, updated_at: 2 }))
       .toEqual({ id: 'c', name: 'N', slug: 's', document: null, plan: 'basic', status: 'active', createdAt: 1, updatedAt: 2 });
     expect(toPlatformAdminDto({ id: 'p', name: 'P', email: 'p@p.com', active: true, password_hash: 'x' })).toEqual({ id: 'p', name: 'P', email: 'p@p.com', active: true });
+  });
+});
+
+describe('utils/dto: marcação do odontograma', () => {
+  it('sem nome de quem marcou (pessoa não encontrada), devolve null em vez de undefined', () => {
+    expect(toToothRecordDto({ id: 'r', tooth: 16, recorded_by: 'u' }).recordedByName).toBeNull();
+    expect(toToothRecordDto({ id: 'r', tooth: 16, recorded_by: 'u', recorded_by_name: 'Ana' }).recordedByName).toBe('Ana');
   });
 });
 

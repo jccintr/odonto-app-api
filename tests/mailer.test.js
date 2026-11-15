@@ -100,6 +100,21 @@ describe('modelos de e-mail', () => {
     expect(sent.text).toContain('24 horas');
   });
 
+  it('convite para outra clínica: nome da clínica, perfil, link e validade; dados escapados no HTML', async () => {
+    configure();
+    await mailer.sendInviteEmail({ to: 'bia@x.com', name: 'Bia', clinicName: 'Sorriso <&> Cia', role: 'dentist', url: 'https://app/aceitar-convite?token=T', days: 7 });
+    const sent = sendMail.mock.calls[0][0];
+    expect(sent).toMatchObject({ to: 'bia@x.com', subject: 'Convite da Sorriso <&> Cia — OdontoApp' });
+    expect(sent.html).toContain('Sorriso &lt;&amp;&gt; Cia');
+    expect(sent.html).toContain('https://app/aceitar-convite?token=T');
+    expect(sent.text).toContain('como dentista');
+    expect(sent.text).toContain('7 dias');
+    for (const [role, label] of [['admin', 'administrador(a)'], ['secretary', 'secretária(o)']]) {
+      await mailer.sendInviteEmail({ to: 'x@x.com', name: 'X', clinicName: 'C', role, url: 'u', days: 7 });
+      expect(sendMail.mock.calls.at(-1)[0].text).toContain(label);
+    }
+  });
+
   it('e-mail de redefinição de senha', async () => {
     configure();
     await mailer.sendPasswordResetEmail({ to: 'ana@x.com', name: 'Ana', url: 'https://app/redefinir-senha?token=T', minutes: 60 });

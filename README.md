@@ -59,6 +59,24 @@ Banco e schema únicos. Toda tabela de dados de clínica tem `clinic_id` e **Row
 **Para criar uma tabela nova de clínica:** na migration, crie a coluna `clinic_id` e chame `enableTenantRls(knex, 'tabela')`
 (`src/db/rls.js`). O teste `tests/rls.test.js` falha se alguma tabela com `clinic_id` ficar sem RLS.
 
+## Pessoas, clínicas e perfis
+
+- **A conta é da pessoa** (`users`: nome, e-mail único no sistema, senha). Uma pessoa pode trabalhar em **várias clínicas**: cada uma é um
+  **vínculo** (`memberships`) com perfil próprio (`admin`, `secretary`, `dentist`), situação (ativo/desativado) e aceite do convite.
+- **Dentista que troca de clínica (ou atende em duas):** a clínica nova cadastra o mesmo e-mail em `POST /api/users`; como ele já tem conta,
+  vira um **convite** (`invitePending: true`) enviado por e-mail. Ele aceita pelo link (`POST /api/auth/accept-invite`, público, funciona mesmo
+  sem acesso a nenhuma clínica) ou logado (`POST /api/auth/invitations/:clinicId/accept`) e continua com a mesma senha. A clínica antiga só
+  desativa o vínculo dela; o histórico (prontuário, agenda, repasses) fica lá, no perfil do dentista daquela clínica.
+- **Login com várias clínicas:** sem `clinicId`, o login devolve `clinicSelectionRequired: true` e a lista `clinics`; o app repete com o
+  `clinicId` escolhido. Logado, `GET /api/auth/clinics` lista as clínicas e `POST /api/auth/switch-clinic` troca a sessão sem pedir senha.
+- **Administrador que também atende** (clínica de um dentista só): `attendsPatients: true` no cadastro público, em `POST /api/users` ou em
+  `PATCH /api/users/:id` (inclusive para si mesmo). Ele ganha o perfil em Dentistas (perfil clínico = tabela `dentists`, por vínculo) e faz o
+  que só o dentista do atendimento faz (iniciar, concluir, retificar a própria evolução), sem perder a visão de administrador. Conta no limite
+  de dentistas do plano. Dentista sempre atende; secretária nunca.
+- **Nome, telefone e senha são da pessoa:** valem em todas as clínicas. Se ela está em mais de uma, só ela altera nome e telefone (`PATCH /api/auth/me`).
+  Desativar alguém numa clínica encerra só as sessões de lá.
+- **Quem já tem conta e abre a própria clínica** (`POST /api/signup`) usa o mesmo e-mail e a mesma senha; pela plataforma, vira convite.
+
 ## Autenticação
 
 - **Clínica:** `POST /api/auth/login` devolve JWT de acesso (15 min) + refresh token opaco (30 dias, guardado só como hash,
@@ -76,10 +94,15 @@ Banco e schema únicos. Toda tabela de dados de clínica tem `clinic_id` e **Row
 | Método | Rota | Quem | Descrição |
 | --- | --- | --- | --- |
 | GET | `/health` | público | Situação da API e do banco |
-| POST | `/api/auth/login` | público | Entrar (e-mail + senha); 403 `EMAIL_NOT_VERIFIED` se o e-mail não foi confirmado |
+| POST | `/api/auth/login` | público | Entrar (e-mail + senha, e `clinicId` para quem tem mais de uma clínica); 403 `EMAIL_NOT_VERIFIED` se o e-mail não foi confirmado |
 | POST | `/api/auth/refresh` | público | Trocar o refresh token por uma sessão nova |
 | POST | `/api/auth/logout` | público | Revogar o refresh token |
-| GET | `/api/auth/me` | logado | Perfil do usuário e da clínica |
+| GET, PATCH | `/api/auth/me` | logado | Perfil do usuário (perfil nesta clínica, se atende pacientes) e da clínica; alterar o próprio nome |
+| GET | `/api/auth/clinics` | logado | Clínicas em que a pessoa pode entrar |
+| POST | `/api/auth/switch-clinic` | logado | Trocar a sessão para outra clínica da mesma pessoa |
+| GET | `/api/auth/invitations` | logado | Convites pendentes da pessoa |
+| POST | `/api/auth/invitations/:clinicId/accept` | logado | Aceitar um convite |
+| POST | `/api/auth/accept-invite` | público | Aceitar um convite pelo link do e-mail |
 | POST | `/api/auth/verify-email` | público | Confirmar o e-mail com o token do link |
 | POST | `/api/auth/resend-verification` | público | Reenviar o link de verificação (responde sempre igual, exista o e-mail ou não) |
 | POST | `/api/auth/forgot-password` | público | Pedir o link de redefinição de senha |
@@ -87,8 +110,9 @@ Banco e schema únicos. Toda tabela de dados de clínica tem `clinic_id` e **Row
 | POST | `/api/auth/change-password` | logado | Trocar a senha (devolve sessão nova) |
 | GET | `/api/clinic` | logado | Dados da própria clínica |
 | PATCH | `/api/clinic` | admin | Alterar nome e documento |
-| GET, POST | `/api/users` | admin | Listar (filtros e paginação) e criar usuários |
-| GET, PATCH | `/api/users/:id` | admin | Consultar e alterar (nome, perfil, ativo) |
+| GET, POST | `/api/users` | admin | Listar (filtros e paginação) e cadastrar usuários (e-mail que já tem conta vira convite) |
+| GET, PATCH | `/api/users/:id` | admin | Consultar e alterar (nome, telefone, perfil, ativo, `attendsPatients`) |
+| POST | `/api/users/:id/resend-invite` | admin | Reenviar o convite de quem ainda não aceitou |
 | GET | `/api/dentists`, `/api/dentists/:id` | logado | Dentistas da clínica (dados profissionais) |
 | PATCH | `/api/dentists/:id` | admin | CRO, especialidade, cor da agenda e % de repasse |
 | GET | `/api/procedures`, `/api/procedures/:id` | logado | Tabela de procedimentos e preços (filtros e paginação) |
@@ -104,7 +128,7 @@ Banco e schema únicos. Toda tabela de dados de clínica tem `clinic_id` e **Row
 | GET, PATCH | `/api/appointments/:id` | logado | Consultar e remarcar |
 | POST | `/api/appointments/:id/status` | logado | Confirmar, faltar ou cancelar. **Iniciar (`in_progress`): só o dentista, e confere a adimplência do paciente (409 `PATIENT_BLOCKED`)**. **Atendido: só o dentista do atendimento, depois de iniciado, com `evolution` obrigatória**: procedimento(s) realizado(s) e os **dentes afetados** (ou boca toda), do catálogo e/ou de itens de orçamento a dar baixa; texto opcional |
 | GET | `/api/patients/:patientId/evolutions` | admin, dentista | Prontuário: evoluções clínicas do paciente (auditado; a secretária não lê) |
-| POST | `/api/patients/:patientId/evolutions/:id/addendum` | dentista autor | Retificar uma evolução (o registro original nunca muda; o banco só permite acrescentar) |
+| POST | `/api/patients/:patientId/evolutions/:id/addendum` | dentista autor (ou administrador que atende, se for o autor) | Retificar uma evolução (o registro original nunca muda; o banco só permite acrescentar) |
 | GET | `/api/budgets`, `/api/budgets/:id` | logado | Orçamentos (resumo na lista; com itens, subtotal e total no detalhe) |
 | POST, PATCH | `/api/budgets`, `/api/budgets/:id` | admin, dentista | Criar com itens (procedimento + dente + faces) e alterar desconto/observações |
 | POST, PATCH, DELETE | `/api/budgets/:id/items[/:itemId]` | admin, dentista | Incluir, alterar e remover itens (enquanto só propostos, com o orçamento em aberto ou em tratamento) |

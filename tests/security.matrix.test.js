@@ -39,7 +39,8 @@ describe('mapa de rotas', () => {
     expect(publicRoutes.map((e) => e.key)).toEqual([
       'GET /api/signup/options', 'POST /api/signup', 'GET /api/legal/:type',
       'POST /api/auth/login', 'POST /api/auth/refresh', 'POST /api/auth/logout', 'POST /api/auth/verify-email',
-      'POST /api/auth/resend-verification', 'POST /api/auth/forgot-password', 'POST /api/auth/reset-password', 'POST /api/platform/login',
+      'POST /api/auth/resend-verification', 'POST /api/auth/forgot-password', 'POST /api/auth/reset-password', 'POST /api/auth/accept-invite',
+      'POST /api/platform/login',
     ]);
   });
 });
@@ -167,15 +168,11 @@ describe('dentista (escopo dentro da própria clínica)', () => {
 describe('estado da conta', () => {
   const states = [
     ['clínica suspensa', 403, (a) => db('clinics').where({ id: a.clinic.id }).update({ status: 'suspended' })],
-    ['usuário desativado', 401, (a) => db('users').where({ id: a.admin.id }).update({ active: false })],
+    ['usuário desativado', 401, (a) => db('memberships').where({ user_id: a.admin.id }).update({ active: false })],
+    ['vínculo de volta a convite pendente', 401, (a) => db('memberships').where({ user_id: a.admin.id }).update({ accepted_at: null })],
     ['senha trocada depois do token', 401, (a) => db('users').where({ id: a.admin.id }).update({ password_changed_at: new Date(Date.now() + 5000) })],
     ['e-mail não verificado', 403, (a) => db('users').where({ id: a.admin.id }).update({ email_verified_at: null })],
-    ['usuário apagado', 401, async (a) => {
-      await db('users').where({ id: a.admin.id }).update({ role: 'secretary' }); // só para soltar dependências do perfil
-      await db('audit_log').where({ user_id: a.admin.id }).del();
-      await db('tooth_records').where({ recorded_by: a.admin.id }).del();
-      await db('users').where({ id: a.admin.id }).del();
-    }],
+    ['vínculo com a clínica apagado', 401, (a) => db('memberships').where({ user_id: a.admin.id }).del()],
   ];
 
   it.each(states)('%s: toda rota da clínica barra o token do usuário (%i)', async (_name, expected, apply) => {

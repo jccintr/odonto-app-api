@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import db from '../src/db/knex.js';
 import { hashToken } from '../src/services/tokens.js';
-import { api, bearer, createClinic, createUser, PASSWORD, setupUser } from './helpers/factories.js';
+import { PASSWORD, api, bearer, createClinic, createUser, setupUser, updateMembership } from './helpers/factories.js';
 
 const login = (body) => api().post('/api/auth/login').send(body);
 
@@ -115,14 +115,18 @@ describe('GET /api/auth/me e proteção das rotas', () => {
     expect((await api().get('/api/auth/me').set(bearer(token))).status).toBe(401);
   });
 
-  it('401 se o usuário foi desativado ou apagado depois do login', async () => {
+  it('401 se o vínculo com a clínica foi desativado, apagado ou voltou a convite depois do login', async () => {
     const a = await setupUser();
-    await db('users').where({ id: a.user.id }).update({ active: false });
+    await updateMembership(a.user, { active: false });
     expect((await api().get('/api/auth/me').set(a.headers)).status).toBe(401);
 
     const b = await setupUser();
-    await db('users').where({ id: b.user.id }).del();
+    await db('memberships').where({ user_id: b.user.id }).del();
     expect((await api().get('/api/auth/me').set(b.headers)).status).toBe(401);
+
+    const c = await setupUser();
+    await updateMembership(c.user, { accepted_at: null });
+    expect((await api().get('/api/auth/me').set(c.headers)).status).toBe(401);
   });
 
   it('401 se a senha foi trocada depois da emissão do token', async () => {

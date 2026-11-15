@@ -9,9 +9,13 @@ export const get = async (req, res) => {
 };
 
 export const create = async (req, res) => {
-  res.status(201).json(await service.createUser(req.auth.clinicId, req.valid.body));
+  res.status(201).json(await service.createUser(req.auth.clinicId, req.auth.userId, req.valid.body));
 };
 
 export const update = async (req, res) => {
   res.json(await service.updateUser(req.auth.clinicId, req.auth.userId, req.valid.params.id, req.valid.body));
+};
+
+export const resendInvite = async (req, res) => {
+  res.json(await service.resendInvite(req.auth.clinicId, req.valid.params.id));
 };

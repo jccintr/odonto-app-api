@@ -43,5 +43,8 @@ export async function signup(body, { ip, userAgent }) {
   await notifyOwner('Nova clínica cadastrada', [
     `Clínica: ${result.clinic.name}`, `Administrador: ${result.admin.name} <${result.admin.email}>`, `Modelo: ${body.template}`, `Teste até: ${result.trialEndsOn}`,
   ]);
-  return { ...result, message: 'Clínica criada! Enviamos um link de confirmação para o seu e-mail. Confirme para entrar.' };
+  const message = result.admin.emailVerified
+    ? 'Clínica criada! Entre com o e-mail e a senha que você já usa e escolha a nova clínica.'
+    : 'Clínica criada! Enviamos um link de confirmação para o seu e-mail. Confirme para entrar.';
+  return { ...result, message };
 }

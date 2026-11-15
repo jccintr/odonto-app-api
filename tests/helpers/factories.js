@@ -22,22 +22,40 @@ export async function createClinic(overrides = {}) {
   return clinic;
 }
 
-/** Cria um usuário direto no banco (senha PASSWORD). */
+/**
+ * Cria uma pessoa com vínculo aceito na clínica, direto no banco (senha PASSWORD).
+ * `role`, `active` e `accepted_at` são do vínculo; o resto é da pessoa. Devolve a pessoa com os campos do vínculo
+ * (clinic_id, role, active, membership_id), como as linhas de membro da aplicação.
+ */
 export async function createUser(clinic, overrides = {}) {
   const n = next();
-  const { password = PASSWORD, ...rest } = overrides;
+  const { password = PASSWORD, role = 'admin', active = true, accepted_at = new Date(), ...rest } = overrides;
   const [user] = await db('users')
-    .insert({
-      clinic_id: clinic.id, name: `Usuário ${n}`, email: `usuario${n}@teste.com`, role: 'admin', email_verified_at: new Date(),
-      password_hash: await hashPassword(password), ...rest,
-    })
+    .insert({ name: `Usuário ${n}`, email: `usuario${n}@teste.com`, email_verified_at: new Date(), password_hash: await hashPassword(password), ...rest })
     .returning('*');
-  return user;
+  const membership = await addMembership(user, clinic, { role, active, accepted_at });
+  return { ...user, clinic_id: clinic.id, role, active, membership_id: membership.id };
 }
 
-/** Faz login pela API e devolve { ...sessão, user }. */
-export async function loginAs(user, password = PASSWORD) {
-  const res = await api().post('/api/auth/login').send({ email: user.email, password });
+/** Vincula uma pessoa que já existe a outra clínica (aceito por padrão; `accepted_at: null` = convite pendente). */
+export async function addMembership(user, clinic, { role = 'admin', active = true, accepted_at = new Date() } = {}) {
+  const [membership] = await db('memberships').insert({ clinic_id: clinic.id, user_id: user.id, role, active, accepted_at }).returning('*');
+  return membership;
+}
+
+/** Liga o atendimento de pacientes (perfil clínico) de um vínculo, como o administrador que também atende. */
+export async function enableAttends(user, clinic = { id: user.clinic_id }) {
+  await db('dentists').insert({ clinic_id: clinic.id, user_id: user.id }).onConflict(['clinic_id', 'user_id']).merge({ active: true });
+  return db('dentists').where({ clinic_id: clinic.id, user_id: user.id }).first();
+}
+
+/** Altera o vínculo de alguém com a clínica (perfil, situação, aceite) direto no banco. */
+export const updateMembership = (user, changes, clinicId = user.clinic_id) =>
+  db('memberships').where({ user_id: user.id, clinic_id: clinicId }).update(changes);
+
+/** Faz login pela API na clínica do usuário (quem tem mais de uma clínica entra direto nela) e devolve { ...sessão, user }. */
+export async function loginAs(user, password = PASSWORD, clinicId = user.clinic_id) {
+  const res = await api().post('/api/auth/login').send({ email: user.email, password, clinicId });
   if (res.status !== 200) throw new Error(`login falhou: ${res.status} ${JSON.stringify(res.body)}`);
   return res.body;
 }
@@ -76,7 +94,7 @@ export async function createPatient(clinic, overrides = {}) {
 /** Usuário dentista + perfil profissional (criado pelo gatilho do banco). */
 export async function createDentist(clinic, overrides = {}) {
   const user = await createUser(clinic, { role: 'dentist', ...overrides });
-  const dentist = await db('dentists').where({ user_id: user.id }).first();
+  const dentist = await db('dentists').where({ user_id: user.id, clinic_id: clinic.id }).first();
   return { user, dentist };
 }
 

@@ -31,7 +31,7 @@ const appointmentsQuery = (trx) =>
     .select('appointments.*', 'patients.name as patient_name', 'patients.phone as patient_phone', 'users.name as dentist_name', 'dentists.color as dentist_color');
 
 async function loadAppointment(trx, auth, id) {
-  const scope = await ownDentistId(trx, auth);
+  const scope = ownDentistId(auth);
   const row = await appointmentsQuery(trx)
     .where('appointments.id', id)
     .modify((query) => { if (scope) query.where('appointments.dentist_id', scope); })
@@ -53,7 +53,7 @@ const filteredList = (trx, filters, scope) =>
 /** Lista atendimentos que encostam no intervalo [from, to). Dentista: só os dele. */
 export function listAppointments(auth, filters) {
   return withTenant(auth.clinicId, async (trx) => {
-    const scope = await ownDentistId(trx, auth);
+    const scope = ownDentistId(auth);
     const [{ count }] = await filteredList(trx, filters, scope).clearSelect().clearOrder().count({ count: '*' });
     const { limit, offset } = paginate(filters);
     const rows = await filteredList(trx, filters, scope).orderBy('appointments.starts_at').limit(limit).offset(offset);
@@ -77,7 +77,7 @@ export async function createAppointment(auth, { patientId, dentistId, startsAt, 
   assertNotPast(startsAt);
   try {
     return await withTenant(auth.clinicId, async (trx) => {
-      const own = await ownDentistId(trx, auth);
+      const own = ownDentistId(auth);
       if (own && dentistId && dentistId !== own) throw forbidden('O dentista só agenda na própria agenda.');
       const chosen = own ?? dentistId;
       if (!chosen) throw badRequest('Informe o dentista.');
@@ -105,7 +105,7 @@ export async function updateAppointment(auth, id, changes) {
       const current = await loadAppointment(trx, auth, id);
       if (!RESCHEDULABLE.includes(current.status)) throw conflict('Só é possível alterar atendimentos agendados ou confirmados.');
 
-      const own = await ownDentistId(trx, auth);
+      const own = ownDentistId(auth);
       if (own && changes.dentistId && changes.dentistId !== own) throw forbidden('O dentista só agenda na própria agenda.');
       if (changes.dentistId) await assertActiveDentist(trx, changes.dentistId);
 
@@ -134,12 +134,18 @@ export async function updateAppointment(auth, id, changes) {
   }
 }
 
+const CLINICAL_MESSAGES = {
+  in_progress: 'Só o dentista inicia o atendimento.',
+  attended: 'Só o dentista marca o atendimento como atendido, registrando o que foi feito.',
+};
+
 export function changeStatus(auth, id, { status, reason, evolution }) {
-  // quem atende registra o que fez: só o dentista (do próprio atendimento) inicia e conclui
-  if (status === 'in_progress' && auth.role !== 'dentist') throw forbidden('Só o dentista inicia o atendimento.');
-  if (status === 'attended' && auth.role !== 'dentist') throw forbidden('Só o dentista marca o atendimento como atendido, registrando o que foi feito.');
+  // quem atende registra o que fez: só o dentista do próprio atendimento inicia e conclui (inclusive o administrador que também atende)
+  const clinical = CLINICAL_MESSAGES[status];
+  if (clinical && !auth.dentistId) throw forbidden(clinical);
   return withTenant(auth.clinicId, async (trx) => {
     const current = await loadAppointment(trx, auth, id);
+    if (clinical && current.dentist_id !== auth.dentistId) throw forbidden('Só o dentista deste atendimento pode iniciá-lo ou concluí-lo.');
     if (!TRANSITIONS[current.status].includes(status)) {
       throw conflict(`Não é possível mudar de "${current.status}" para "${status}".`, { code: 'INVALID_TRANSITION' });
     }

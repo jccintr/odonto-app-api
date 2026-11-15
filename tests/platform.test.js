@@ -97,7 +97,7 @@ describe('POST /api/platform/clinics', () => {
     expect(custom.body.clinic).toMatchObject({ slug: 'minha-clinica', plan: 'premium' });
   });
 
-  it('slug e e-mail repetidos: 409, sem deixar a clínica pela metade', async () => {
+  it('slug repetido: 409, sem deixar a clínica pela metade', async () => {
     const { headers } = await platformSession();
     await api().post('/api/platform/clinics').set(headers).send(newClinic({ slug: 'sorriso' }));
 
@@ -106,11 +106,8 @@ describe('POST /api/platform/clinics', () => {
     expect(dupSlug.status).toBe(409);
     expect(dupSlug.body.error).toMatch(/slug/);
 
-    const dupEmail = await api().post('/api/platform/clinics').set(headers).send(newClinic({ slug: 'outra' }));
-    expect(dupEmail.status).toBe(409);
-    expect(dupEmail.body.error).toMatch(/administrador/);
-
     expect(await db('clinics').count({ n: '*' }).first()).toEqual({ n: '1' });
+    expect(await db('users').count({ n: '*' }).first()).toEqual({ n: '1' });
   });
 
   it('não falha se o e-mail de verificação não puder ser enviado', async () => {

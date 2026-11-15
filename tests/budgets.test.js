@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import db from '../src/db/knex.js';
-import { api, bearer, createClinic, createDentist, createPatient, createProcedure, loginAs, setupUser } from './helpers/factories.js';
+import { api, bearer, createClinic, createDentist, createPatient, createProcedure, loginAs, setupUser, updateMembership } from './helpers/factories.js';
 
 async function setup() {
   const admin = await setupUser();
@@ -85,7 +85,7 @@ describe('POST /api/budgets', () => {
     await db('patients').where({ id: c.patient.id }).update({ active: false });
     expect((await make(c)).status).toBe(422);
     await db('patients').where({ id: c.patient.id }).update({ active: true });
-    await db('users').where({ id: c.dentist.user.id }).update({ active: false });
+    await updateMembership(c.dentist.user, { active: false });
     expect((await make(c)).status).toBe(422);
     expect(await db('budgets')).toHaveLength(0);
   });

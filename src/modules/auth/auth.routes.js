@@ -4,7 +4,7 @@ import { authenticate } from '../../middlewares/auth.js';
 import { limiters } from '../../middlewares/rateLimit.js';
 import * as controller from './auth.controller.js';
 import {
-  changePasswordSchema, forgotPasswordSchema, loginSchema, refreshSchema, resetPasswordSchema, tokenSchema,
+  changePasswordSchema, clinicParams, forgotPasswordSchema, loginSchema, refreshSchema, resetPasswordSchema, switchClinicSchema, tokenSchema, updateMeSchema,
 } from './auth.schemas.js';
 
 const router = Router();
@@ -13,6 +13,14 @@ router.post('/login', limiters.login, validate({ body: loginSchema }), controlle
 router.post('/refresh', validate({ body: refreshSchema }), controller.refresh);
 router.post('/logout', validate({ body: refreshSchema }), controller.logout);
 router.get('/me', authenticate, controller.me);
+router.patch('/me', authenticate, validate({ body: updateMeSchema }), controller.updateMe);
+
+// uma pessoa pode trabalhar em mais de uma clínica: lista as clínicas dela e troca a sessão sem pedir a senha de novo
+router.get('/clinics', authenticate, controller.clinics);
+router.post('/switch-clinic', authenticate, validate({ body: switchClinicSchema }), controller.switchClinic);
+router.get('/invitations', authenticate, controller.invitations);
+router.post('/invitations/:clinicId/accept', authenticate, validate({ params: clinicParams }), controller.acceptInvitation);
+router.post('/accept-invite', limiters.password, validate({ body: tokenSchema }), controller.acceptInvite);
 
 router.post('/verify-email', limiters.password, validate({ body: tokenSchema }), controller.verifyEmail);
 router.post('/resend-verification', limiters.password, validate({ body: forgotPasswordSchema }), controller.resendVerification);

@@ -14,7 +14,31 @@ export const logout = async (req, res) => {
 };
 
 export const me = async (req, res) => {
-  res.json(await service.getProfile(req.auth.userId));
+  res.json(await service.getProfile(req.auth));
+};
+
+export const updateMe = async (req, res) => {
+  res.json(await service.updateMyProfile(req.auth, req.valid.body));
+};
+
+export const clinics = async (req, res) => {
+  res.json(await service.listMyClinics(req.auth.userId));
+};
+
+export const switchClinic = async (req, res) => {
+  res.json(await service.switchClinic(req.auth, req.valid.body.clinicId));
+};
+
+export const invitations = async (req, res) => {
+  res.json(await service.listInvitations(req.auth.userId));
+};
+
+export const acceptInvitation = async (req, res) => {
+  res.json(await service.acceptInvitation(req.auth.userId, req.valid.params.clinicId));
+};
+
+export const acceptInvite = async (req, res) => {
+  res.json(await service.acceptInviteByToken(req.valid.body.token));
 };
 
 export const verifyEmail = async (req, res) => {
@@ -38,5 +62,5 @@ export const resetPassword = async (req, res) => {
 };
 
 export const changePassword = async (req, res) => {
-  res.json(await service.changePassword({ userId: req.auth.userId, ...req.valid.body }));
+  res.json(await service.changePassword({ auth: req.auth, ...req.valid.body }));
 };

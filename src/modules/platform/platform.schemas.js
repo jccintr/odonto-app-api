@@ -2,7 +2,7 @@ import { z } from '../../config/zod.js';
 import { emailField, passwordField } from '../auth/auth.schemas.js';
 import { paginationSchema } from '../../utils/pagination.js';
 import { BILLING_STATES } from '../billing/access.js';
-import { isoDate } from '../../utils/fields.js';
+import { isoDate, phoneField } from '../../utils/fields.js';
 
 export const platformLoginSchema = z.object({ email: emailField, password: z.string().min(1, 'Informe a senha.') });
 export const idParams = z.object({ id: z.uuid('Identificador inválido.') });
@@ -16,7 +16,7 @@ export const createClinicSchema = z.object({
   slug: slugField.optional(),
   document: z.string().trim().max(20, 'Documento muito longo.').optional(),
   plan: z.string().trim().min(1).max(40).optional(),
-  admin: z.object({ name: nameField, email: emailField, password: passwordField }),
+  admin: z.object({ name: nameField, email: emailField, password: passwordField, phone: phoneField.optional(), attendsPatients: z.boolean().default(false) }),
 });
 
 export const updateClinicSchema = z

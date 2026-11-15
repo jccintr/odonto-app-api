@@ -87,8 +87,13 @@ export async function listClinics({ status, billing, q, ...paging }) {
 
 /** Quantidades de cadastros ativos e de agendamentos da clínica (só números: o backoffice não vê dados de pacientes nem de usuários). */
 async function clinicUsage(clinicId) {
-  const [people, patients, appointments] = await Promise.all([
-    db('users').where({ clinic_id: clinicId, active: true }).select('role').count({ count: '*' }).groupBy('role'),
+  const [people, clinical, patients, appointments] = await Promise.all([
+    db('memberships').where({ clinic_id: clinicId, active: true }).select('role').count({ count: '*' }).groupBy('role'),
+    // quem atende pacientes: dentistas e administradores com o atendimento ligado
+    db('dentists')
+      .join('memberships', (join) => join.on('memberships.clinic_id', 'dentists.clinic_id').andOn('memberships.user_id', 'dentists.user_id'))
+      .where({ 'dentists.clinic_id': clinicId, 'dentists.active': true, 'memberships.active': true })
+      .count({ count: '*' }).first(),
     db('patients').where({ clinic_id: clinicId, active: true }).count({ count: '*' }).first(),
     // agendamentos não cancelados: no total e criados nos últimos 30 dias (pela data do cadastro do agendamento, assim contam também os marcados para o futuro)
     db('appointments').where({ clinic_id: clinicId }).whereNot('status', 'canceled').select(
@@ -98,7 +103,7 @@ async function clinicUsage(clinicId) {
   ]);
   const byRole = Object.fromEntries(people.map((r) => [r.role, Number(r.count)]));
   return {
-    dentists: byRole.dentist ?? 0,
+    dentists: Number(clinical.count),
     secretaries: byRole.secretary ?? 0,
     admins: byRole.admin ?? 0,
     patients: Number(patients.count),

@@ -8,6 +8,7 @@ import { toInvoiceDto, toPlanDto } from '../../utils/dto.js';
 import { computeAccess, coveredUntil, nextPeriodStart } from './access.js';
 import { notifyOwner } from './notify.js';
 import { pixFor } from './pix.js';
+import { countActiveDentists } from './limits.js';
 
 export const loadSubscription = (db, clinicId) => db('subscriptions').where({ clinic_id: clinicId }).first();
 
@@ -82,8 +83,8 @@ export async function choosePlan(clinicId, userId, planId) {
     const sub = await loadSubscription(trx, clinicId);
 
     if (plan.max_dentists !== null) {
-      const [{ count }] = await trx('users').where({ role: 'dentist', active: true }).count({ count: '*' });
-      if (Number(count) > plan.max_dentists) {
+      const count = await countActiveDentists(trx);
+      if (count > plan.max_dentists) {
         throw unprocessable(`A clínica tem ${count} dentistas ativos e o plano ${plan.name} permite até ${plan.max_dentists}. Desative dentistas ou escolha outro plano.`, { code: 'PLAN_LIMIT' });
       }
     }

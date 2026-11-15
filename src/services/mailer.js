@@ -55,6 +55,19 @@ export function sendVerificationEmail({ to, name, url, hours }) {
   });
 }
 
+const ROLE_LABELS = { admin: 'administrador(a)', secretary: 'secretária(o)', dentist: 'dentista' };
+
+/** Convite para uma pessoa que já tem conta no OdontoApp entrar na equipe de outra clínica. */
+export function sendInviteEmail({ to, name, clinicName, role, url, days }) {
+  const roleLabel = ROLE_LABELS[role];
+  return sendEmail({
+    to,
+    subject: `Convite da ${clinicName} — OdontoApp`,
+    html: renderTemplate('membership-invite', { NAME: name, CLINIC: clinicName, ROLE: roleLabel, URL: url, DAYS: days }),
+    text: `Olá, ${name}! A ${clinicName} convidou você para a equipe no OdontoApp como ${roleLabel}. Você continua usando o mesmo e-mail e a mesma senha. Para aceitar: ${url}\nO link vale por ${days} dias e só pode ser usado uma vez.`,
+  });
+}
+
 /** Aviso interno para o dono da plataforma (clínica nova, "já paguei", pedido de exclusão). Sem OWNER_EMAIL, não envia. */
 export function sendOwnerNotice({ subject, text }) {
   if (!config.ownerEmail) return { skipped: true };

@@ -114,12 +114,13 @@ describe('cadastro de clínica', () => {
     expect(await db('clinics')).toHaveLength(0);
   });
 
-  it('e-mail já cadastrado: 409 e a clínica não fica pela metade', async () => {
+  it('e-mail que já tem conta e senha diferente: 409 EMAIL_IN_USE e a clínica não fica pela metade', async () => {
     expect((await signup()).status).toBe(201);
-    const again = await signup({ clinicName: 'Outra Clínica' });
+    const again = await signup({ clinicName: 'Outra Clínica', admin: { name: 'Dra. Ana', email: 'ana@sorriso.com', password: 'outra-senha-qualquer' } });
     expect(again.status).toBe(409);
-    expect(again.body.error).toContain('E-mail');
+    expect(again.body.code).toBe('EMAIL_IN_USE');
     expect(await db('clinics')).toHaveLength(1);
+    expect(await db('memberships')).toHaveLength(1);
     expect(await db('terms_acceptances')).toHaveLength(1);
   });
 

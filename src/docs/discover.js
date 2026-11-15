@@ -13,6 +13,7 @@ function absorb(state, handlers) {
     if (handler === authenticate) next.auth = 'clinic';
     if (handler === authenticatePlatform) next.auth = 'platform';
     if (handler.roles) next.roles = handler.roles;
+    if (handler.attendingAdmin) next.attendingAdmin = true;
     if (handler.schemas) next.schemas = handler.schemas;
     if (LIMITERS.includes(handler)) next.rateLimited = true;
   }
@@ -23,7 +24,7 @@ export function listRoutes() {
   const routes = [];
   for (const [prefix, router] of MOUNTS) {
     // middlewares registrados com router.use(...) valem para as rotas que vêm depois deles
-    let inherited = { auth: null, roles: null, schemas: {}, rateLimited: false };
+    let inherited = { auth: null, roles: null, attendingAdmin: false, schemas: {}, rateLimited: false };
     for (const layer of router.stack) {
       if (!layer.route) {
         inherited = absorb(inherited, [layer.handle]);

@@ -2,17 +2,23 @@ import { withTenant } from '../../db/tenant.js';
 import { notFound } from '../../utils/errors.js';
 import { toDentistDto } from '../../utils/dto.js';
 
-// Só entram usuários que hoje têm perfil "dentist" (quem foi rebaixado mantém o histórico, mas sai da lista).
+// Quem atende pacientes na clínica: dentistas e administradores com o atendimento ligado.
+// Quem deixou de atender (rebaixado ou administrador que desligou) mantém o histórico, mas sai da lista.
+// `active` é a situação do vínculo com a clínica (desativado = não entra mais).
 const dentistsQuery = (trx) =>
   trx('dentists')
     .join('users', 'users.id', 'dentists.user_id')
-    .where('users.role', 'dentist')
-    .select('dentists.*', 'users.name', 'users.email', 'users.active');
+    .join('memberships', (join) => join.on('memberships.clinic_id', 'dentists.clinic_id').andOn('memberships.user_id', 'dentists.user_id'))
+    .where('dentists.active', true)
+    .select(
+      'dentists.id', 'dentists.user_id', 'dentists.cro', 'dentists.specialty', 'dentists.color', 'dentists.payout_percent',
+      'users.name', 'users.email', 'memberships.role', 'memberships.active',
+    );
 
 export function listDentists(clinicId, { active }) {
   return withTenant(clinicId, async (trx) => {
     const rows = await dentistsQuery(trx)
-      .modify((query) => { if (active !== undefined) query.where('users.active', active); })
+      .modify((query) => { if (active !== undefined) query.where('memberships.active', active); })
       .orderBy('users.name');
     return rows.map(toDentistDto);
   });
@@ -29,7 +35,7 @@ export function getDentist(clinicId, id) {
 export function updateDentist(clinicId, id, { payoutPercent, ...rest }) {
   const changes = { ...rest, ...(payoutPercent !== undefined && { payout_percent: payoutPercent }) };
   return withTenant(clinicId, async (trx) => {
-    const updated = await trx('dentists').where({ id }).update({ ...changes, updated_at: new Date() });
+    const updated = await trx('dentists').where({ id, active: true }).update({ ...changes, updated_at: new Date() });
     if (!updated) throw notFound('Dentista');
     return toDentistDto(await dentistsQuery(trx).where('dentists.id', id).first());
   });

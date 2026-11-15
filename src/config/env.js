@@ -39,6 +39,7 @@ export const config = {
 
   get emailVerificationHours() { return num('EMAIL_VERIFICATION_HOURS', 24); },
   get passwordResetMinutes() { return num('PASSWORD_RESET_MINUTES', 60); },
+  get inviteDays() { return num('INVITE_DAYS', 7); },
   get tokenResendCooldownSeconds() { return num('TOKEN_RESEND_COOLDOWN_SECONDS', 60); },
 
   // armazenamento de imagens e radiografias (Cloudinary). Sem as três chaves, as rotas de imagem respondem 503.

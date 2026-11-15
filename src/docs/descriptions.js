@@ -2,8 +2,10 @@
 // vêm do código (schemas zod e middlewares). Aqui só entram resumo, regras de negócio, resposta de sucesso e erros específicos.
 import { array, page, ref } from './schemas.js';
 
+const oneOf = (...names) => ({ oneOf: names.map(ref) });
+
 const E401_LOGIN = 'E-mail ou senha inválidos.';
-const E403_ACCESS = 'Conta sem acesso: `EMAIL_NOT_VERIFIED` (e-mail ainda não confirmado), `USER_INACTIVE` (usuário desativado) ou `CLINIC_SUSPENDED` (clínica suspensa).';
+const E403_ACCESS = 'Conta sem acesso: `EMAIL_NOT_VERIFIED` (e-mail ainda não confirmado), `USER_INACTIVE` (usuário desativado na clínica), `CLINIC_SUSPENDED` (clínica suspensa) ou `NO_CLINIC_ACCESS` (sem vínculo aceito com a clínica pedida, ou com nenhuma clínica).';
 const E503_STORAGE = 'Armazenamento de imagens não configurado (`STORAGE_NOT_CONFIGURED`).';
 const E404_REF = 'Paciente, dentista ou procedimento não encontrado (ou de outra clínica).';
 
@@ -15,11 +17,11 @@ export const DOCS = {
   },
   'POST /api/signup': {
     summary: 'Cadastrar uma clínica', status: 201, response: ref('Cadastro'),
-    description: 'Autoatendimento: cria a clínica, o primeiro administrador e o **teste grátis** (`trialDays` dias, sem cartão), já com os procedimentos do `template` escolhido (`general`, `orthodontics` ou `empty`). Registra o aceite dos Termos de Uso e da Política de Privacidade (versão, data, IP e navegador). O administrador recebe o e-mail de verificação e só entra depois de confirmar. Limite de cadastros por IP; e-mails temporários são recusados.',
+    description: 'Autoatendimento: cria a clínica, o primeiro administrador e o **teste grátis** (`trialDays` dias, sem cartão), já com os procedimentos do `template` escolhido (`general`, `orthodontics` ou `empty`). Registra o aceite dos Termos de Uso e da Política de Privacidade (versão, data, IP e navegador). O administrador recebe o e-mail de verificação e só entra depois de confirmar (quem já tinha conta verificada entra direto). `admin.attendsPatients: true` = o administrador também atende pacientes (clínica de um dentista só). Limite de cadastros por IP; e-mails temporários são recusados.',
     errors: {
       400: 'Dados inválidos, e-mail temporário (`EMAIL_NOT_ALLOWED`), ou captcha ausente/reprovado (`CAPTCHA_REQUIRED`, `CAPTCHA_FAILED`).',
       403: 'Cadastro público desativado (`SIGNUP_DISABLED`).',
-      409: 'E-mail já cadastrado.',
+      409: 'O e-mail já tem conta no OdontoApp e a senha não confere (`EMAIL_IN_USE`). Quem já tem conta (por exemplo, um dentista que trabalha em outra clínica) cria a própria clínica com o mesmo e-mail e a **mesma senha**: a clínica nova entra na conta dele.',
     },
   },
   'GET /api/legal/:type': {
@@ -68,8 +70,8 @@ export const DOCS = {
 
   // ---------------- autenticação ----------------
   'POST /api/auth/login': {
-    summary: 'Entrar', status: 200, response: ref('Sessao'),
-    description: 'Entra com e-mail e senha. **Só entra quem já confirmou o e-mail.** Depois de 5 erros seguidos (mesmo IP e e-mail) o acesso trava por alguns minutos.',
+    summary: 'Entrar', status: 200, response: oneOf('Sessao', 'SelecaoClinica'),
+    description: 'Entra com e-mail e senha. **Só entra quem já confirmou o e-mail.** A conta é da pessoa e vale em todas as clínicas em que ela trabalha: com uma clínica só, devolve a sessão; com mais de uma, devolve `clinicSelectionRequired: true` e a lista `clinics`, e o app repete o login com o `clinicId` escolhido. Depois de 5 erros seguidos (mesmo IP e e-mail) o acesso trava por alguns minutos.',
     errors: { 401: E401_LOGIN, 403: E403_ACCESS },
   },
   'POST /api/auth/refresh': {
@@ -94,10 +96,36 @@ export const DOCS = {
     summary: 'Redefinir a senha com o link do e-mail', status: 200, response: ref('Mensagem'),
     description: 'Define a nova senha e **encerra todas as sessões abertas**. Quem recebeu o e-mail comprova o endereço, então o e-mail também passa a constar como verificado.',
   },
-  'GET /api/auth/me': { summary: 'Meu perfil', status: 200, response: ref('Perfil'), description: 'Dados de quem está logado e da clínica.' },
+  'GET /api/auth/me': { summary: 'Meu perfil', status: 200, response: ref('Perfil'), description: 'Dados de quem está logado (com o perfil nesta clínica e se atende pacientes) e da clínica.' },
+  'PATCH /api/auth/me': {
+    summary: 'Alterar meu nome e telefone', status: 200, response: ref('Perfil'),
+    description: 'Nome e telefone (`phone`, DDD + número, aceita máscara; `null` apaga) são da pessoa e aparecem em todas as clínicas dela. Quem trabalha em mais de uma clínica só tem esses dados alterados por aqui.',
+  },
+  'GET /api/auth/clinics': {
+    summary: 'Minhas clínicas', status: 200, response: array('ClinicaAcesso'),
+    description: 'Clínicas em que a pessoa pode entrar agora (vínculo aceito e ativo, clínica ativa), para o seletor de clínica.',
+  },
+  'POST /api/auth/switch-clinic': {
+    summary: 'Trocar de clínica', status: 200, response: ref('Sessao'),
+    description: 'Devolve uma sessão nova na clínica escolhida, sem pedir a senha de novo. A sessão atual continua valendo até expirar ou sair.',
+    errors: { 403: E403_ACCESS },
+  },
+  'GET /api/auth/invitations': {
+    summary: 'Meus convites pendentes', status: 200, response: array('Convite'),
+    description: 'Clínicas que convidaram a pessoa e ainda esperam o aceite (convites cancelados ou de clínicas suspensas não aparecem).',
+  },
+  'POST /api/auth/invitations/:clinicId/accept': {
+    summary: 'Aceitar convite (logado)', status: 200, response: ref('ConviteAceito'),
+    description: 'Aceita o convite da clínica. Depois disso ela aparece em `GET /api/auth/clinics` e no login.',
+  },
+  'POST /api/auth/accept-invite': {
+    summary: 'Aceitar convite pelo link do e-mail', status: 200, response: ref('ConviteAceito'),
+    description: 'Público: funciona mesmo para quem ainda não consegue entrar em nenhuma clínica (por exemplo, um dentista que saiu da clínica antiga). O link é de uso único e vale `INVITE_DAYS` dias (padrão 7). Quem abriu o link recebido por e-mail comprova o endereço, então o e-mail também passa a constar como verificado.',
+    errors: { 400: 'Dados inválidos, link inválido/expirado, ou convite cancelado pela clínica (`INVITE_CANCELED`).' },
+  },
   'POST /api/auth/change-password': {
     summary: 'Trocar a senha', status: 200, response: ref('Sessao'),
-    description: 'Troca a senha de quem está logado, **encerra as outras sessões** e devolve uma sessão nova. Senha atual errada responde 400 com `code: WRONG_PASSWORD` (não 401, para o app não deslogar).',
+    description: 'Troca a senha de quem está logado (a senha é da pessoa: vale em todas as clínicas dela), **encerra as outras sessões** e devolve uma sessão nova. Senha atual errada responde 400 com `code: WRONG_PASSWORD` (não 401, para o app não deslogar).',
   },
 
   // ---------------- clínica e usuários ----------------
@@ -113,22 +141,32 @@ export const DOCS = {
   'PATCH /api/clinic': { summary: 'Alterar minha clínica', status: 200, response: ref('Clinica'), description: 'Nome, documento, `overdueGraceDays` (tolerância de atraso, de 0 a 60 dias; padrão 7) e `cashDiscountPercent` (desconto sugerido para pagamento à vista, de 0 a 50%; padrão 0). Plano e situação só a plataforma altera.' },
   'GET /api/users': { summary: 'Listar usuários', status: 200, response: page('Usuario'), description: 'Só da própria clínica, em ordem de nome.' },
   'POST /api/users': {
-    summary: 'Criar usuário', status: 201, response: ref('Usuario'),
-    description: 'Cria o usuário e envia o e-mail de verificação (o usuário só entra depois de confirmar). Perfil `dentist` ganha automaticamente o perfil profissional em Dentistas.',
+    summary: 'Cadastrar usuário (ou convidar quem já tem conta)', status: 201, response: ref('Usuario'),
+    description: 'E-mail novo: cria a pessoa com a senha inicial (`password`, obrigatória neste caso) e o telefone (`phone`, opcional) e envia o e-mail de verificação (ela só entra depois de confirmar). E-mail que **já tem conta** no OdontoApp (por exemplo, um dentista que trabalha ou trabalhou em outra clínica): não cria conta nova; o usuário volta com `invitePending: true` e a pessoa recebe um convite por e-mail, aceita e entra com a senha que já usa (a `password` e o `phone` informados são ignorados: a pessoa já tem os dela). Perfil `dentist` ganha automaticamente o perfil profissional em Dentistas; um `admin` com `attendsPatients: true` também (clínica pequena em que o administrador é o dentista).',
     errors: {
-      409: 'E-mail já cadastrado (o e-mail é único em todo o sistema).',
-      422: 'O plano da clínica não permite mais dentistas ativos (`PLAN_LIMIT`). No teste grátis não há limite.',
+      400: 'Dados inválidos, ou falta a senha inicial de um e-mail que ainda não tem conta.',
+      409: 'Esta pessoa já está cadastrada nesta clínica (`ALREADY_MEMBER`).',
+      422: 'O plano da clínica não permite mais dentistas ativos (`PLAN_LIMIT`; no teste grátis não há limite), ou `attendsPatients` não combina com o perfil (`INVALID_ATTENDS`: dentista sempre atende, secretária nunca).',
     },
   },
   'GET /api/users/:id': { summary: 'Consultar usuário', status: 200, response: ref('Usuario') },
   'PATCH /api/users/:id': {
     summary: 'Alterar usuário', status: 200, response: ref('Usuario'),
-    description: 'Nome, perfil e situação (`active`). Desativar encerra as sessões do usuário. O administrador não pode se desativar nem se rebaixar.',
-    errors: { 422: 'O administrador não pode desativar nem alterar o próprio perfil, ou reativar/promover alguém a dentista passaria do limite do plano (`PLAN_LIMIT`).' },
+    description: 'Nome, telefone (`phone`; `null` apaga), perfil, situação (`active`) e se o administrador também atende pacientes (`attendsPatients`). Tudo vale só para esta clínica, exceto nome e telefone, que são da pessoa: se ela também trabalha em outra clínica, só ela altera (`PATCH /api/auth/me`). Desativar encerra as sessões da pessoa nesta clínica (nas outras, nada muda) e, num convite pendente, cancela o convite. Deixar de atender mantém o histórico (prontuário, agenda, repasses). O administrador não pode se desativar nem se rebaixar, mas pode ligar e desligar o próprio atendimento.',
+    errors: { 422: 'O administrador não pode desativar nem alterar o próprio perfil; passar a atender ultrapassaria o limite do plano (`PLAN_LIMIT`); `attendsPatients` não combina com o perfil (`INVALID_ATTENDS`); ou a pessoa também está em outra clínica e só ela altera nome e telefone (`SHARED_ACCOUNT`).' },
+  },
+  'POST /api/users/:id/resend-invite': {
+    summary: 'Reenviar convite', status: 200, response: ref('Mensagem'),
+    description: 'Envia de novo o convite de quem ainda não aceitou (o link anterior desta clínica deixa de valer). Respeita um intervalo mínimo entre envios.',
+    errors: {
+      409: 'O convite já foi aceito (`INVITE_ACCEPTED`).',
+      422: 'Convite cancelado (usuário desativado).',
+      429: 'Espere o intervalo mínimo para reenviar (`RATE_LIMITED`, com `retryAfterSeconds`).',
+    },
   },
 
   // ---------------- dentistas e procedimentos ----------------
-  'GET /api/dentists': { summary: 'Listar dentistas', status: 200, response: array('Dentista'), description: 'Usuários com perfil `dentist` e seus dados profissionais.' },
+  'GET /api/dentists': { summary: 'Listar dentistas', status: 200, response: array('Dentista'), description: 'Quem atende pacientes na clínica (perfil `dentist` e administradores com o atendimento ligado) e seus dados profissionais. Quem deixou de atender sai da lista, mas o histórico continua.' },
   'GET /api/dentists/:id': { summary: 'Consultar dentista', status: 200, response: ref('Dentista') },
   'PATCH /api/dentists/:id': { summary: 'Alterar dados profissionais do dentista', status: 200, response: ref('Dentista'), description: 'CRO, especialidade, cor da agenda e percentual de repasse padrão.' },
   'GET /api/procedures': { summary: 'Listar procedimentos', status: 200, response: page('Procedimento'), description: 'Tabela de procedimentos e preços da clínica.' },
@@ -233,7 +271,7 @@ export const DOCS = {
   'POST /api/appointments/:id/status': {
     summary: 'Mudar a situação do atendimento', status: 200, response: ref('Atendimento'),
     description: 'Fluxo: `scheduled` → `confirmed` → `in_progress` → `attended`; também `no_show` e `canceled` (com `reason` opcional; só antes de iniciar). Situações finais não mudam mais; cancelar libera o horário. **`in_progress` (iniciar o atendimento) é só do dentista e confere a adimplência do paciente** (409 `PATIENT_BLOCKED` se ele tem parcela vencida além da tolerância da clínica, sem liberação do administrador). **`attended` só vale para o dentista do atendimento, depois de iniciado, e exige `evolution`**: ao menos um procedimento realizado e **onde** (os dentes afetados em `teeth`, numeração FDI, ou `wholeMouth: true` para a boca toda), por procedimentos do catálogo (`procedures`) e/ou itens de orçamento aprovado a dar baixa (`budgetItems`, o mesmo efeito de executar o item; o item que já tem dente usa o dele). `description` é um texto opcional. O registro vai para o prontuário do paciente e não pode ser alterado depois.',
-    errors: { 403: 'Iniciar e marcar como atendido são só do dentista.', 409: 'Transição inválida (`INVALID_TRANSITION`), paciente bloqueado por inadimplência (`PATIENT_BLOCKED`) ou item de orçamento que não está pendente/aprovado.', 422: 'Procedimento desativado.' },
+    errors: { 403: 'Iniciar e marcar como atendido são só do dentista do atendimento (o administrador que também atende pode, nos atendimentos dele).', 409: 'Transição inválida (`INVALID_TRANSITION`), paciente bloqueado por inadimplência (`PATIENT_BLOCKED`) ou item de orçamento que não está pendente/aprovado.', 422: 'Procedimento desativado.' },
   },
 
   // ---------------- prontuário ----------------
@@ -427,8 +465,8 @@ export const DOCS = {
   },
   'POST /api/platform/clinics': {
     summary: 'Criar clínica com o primeiro administrador', status: 201, response: ref('ClinicaCriada'),
-    description: 'Cria a clínica e o administrador na mesma transação e envia o e-mail de verificação (o administrador só entra depois de confirmar). O `slug` é gerado do nome se não for informado.',
-    errors: { 409: 'Slug já em uso ou e-mail do administrador já cadastrado.' },
+    description: 'Cria a clínica e o administrador na mesma transação e envia o e-mail de verificação (o administrador só entra depois de confirmar). Se o e-mail do administrador já tem conta no OdontoApp, ele recebe um **convite** (`admin.invitePending: true`) e entra com a senha que já usa (a `password` informada é ignorada). O `slug` é gerado do nome se não for informado.',
+    errors: { 409: 'Slug já em uso.' },
   },
   'GET /api/platform/clinics/:id': {
     summary: 'Consultar clínica', status: 200, response: ref('ClinicaPlataformaDetalhe'),

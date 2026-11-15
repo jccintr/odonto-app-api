@@ -44,7 +44,7 @@ export const findBudgetSummary = (trx, id) => summaryQuery(trx).where('budgets.i
 
 /** Carrega o orçamento respeitando o escopo: o dentista só alcança os dele. */
 async function loadBudget(trx, auth, id) {
-  const scope = await ownDentistId(trx, auth);
+  const scope = ownDentistId(auth);
   const row = await summaryQuery(trx)
     .where('budgets.id', id)
     .modify((q) => { if (scope) q.where('budgets.dentist_id', scope); })
@@ -123,7 +123,7 @@ async function completeIfFinished(trx, budgetId) {
 
 export function listBudgets(auth, filters) {
   return withTenant(auth.clinicId, async (trx) => {
-    const scope = await ownDentistId(trx, auth);
+    const scope = ownDentistId(auth);
     const [{ count }] = await applyFilters(trx('budgets'), filters, scope).count({ count: '*' });
     const { limit, offset } = paginate(filters);
     const rows = await applyFilters(summaryQuery(trx), filters, scope).orderBy('budgets.created_at', 'desc').limit(limit).offset(offset);
@@ -137,7 +137,7 @@ export function getBudget(auth, id) {
 
 export function createBudget(auth, input) {
   return withTenant(auth.clinicId, async (trx) => {
-    const own = await ownDentistId(trx, auth);
+    const own = ownDentistId(auth);
     if (own && input.dentistId && input.dentistId !== own) throw forbidden('O dentista só cria orçamentos na própria carteira.');
     const dentistId = own ?? input.dentistId;
     if (!dentistId) throw badRequest('Informe o dentista.');

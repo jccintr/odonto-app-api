@@ -118,9 +118,25 @@ export const SCHEMAS = {
   PedidoExclusao: obj({ deletionRequestedAt: nDateTime }),
 
   Usuario: obj({
-    id: uuid, clinicId: uuid, name: str, email: str, role, active: bool,
-    emailVerified: bool, createdAt: dateTime, updatedAt: dateTime,
+    id: { type: 'string', format: 'uuid', description: 'Id da pessoa (o mesmo em todas as clínicas em que ela trabalha).' },
+    clinicId: uuid, name: str, email: str,
+    phone: { ...nstr, description: 'Telefone da pessoa (DDD + número, só dígitos). É da pessoa, como o nome: vale em todas as clínicas dela.' },
+    role: { ...role, description: `Perfil NESTA clínica. ${role.description}` },
+    active: { type: 'boolean', description: 'Situação do vínculo com esta clínica (desativado não entra nela; nas outras clínicas da pessoa, nada muda).' },
+    attendsPatients: { type: 'boolean', description: 'Atende pacientes nesta clínica (tem perfil em Dentistas). Dentista sempre; administrador, se ligado; secretária, nunca.' },
+    dentistId: { ...nuuid, description: 'Perfil em Dentistas desta pessoa nesta clínica, quando atende pacientes; senão null.' },
+    invitePending: { type: 'boolean', description: 'true = a pessoa já tinha conta no OdontoApp e ainda não aceitou o convite desta clínica.' },
+    emailVerified: bool,
+    createdAt: { ...dateTime, description: 'Quando entrou na clínica.' },
+    updatedAt: dateTime,
   }),
+  ClinicaAcesso: obj({ id: uuid, name: str, slug: str, role }, 'Clínica em que a pessoa trabalha, com o perfil dela lá.'),
+  SelecaoClinica: obj({
+    clinicSelectionRequired: { type: 'boolean', const: true, description: 'A pessoa trabalha em mais de uma clínica: repita o login com o `clinicId` escolhido.' },
+    clinics: array('ClinicaAcesso'),
+  }, 'Resposta do login de quem tem acesso a mais de uma clínica.'),
+  Convite: obj({ clinic: ref('ClinicaAcesso'), invitedAt: dateTime }),
+  ConviteAceito: obj({ message: str, clinic: ref('ClinicaAcesso') }),
   Clinica: obj({
     id: uuid, name: str, slug: str, document: nstr, plan: str, status: enumOf(['active', 'suspended']),
     overdueGraceDays: { type: 'integer', description: 'Dias de atraso tolerados antes de bloquear o paciente (padrão 7).' },
@@ -137,7 +153,7 @@ export const SCHEMAS = {
   ClinicaPlataforma: obj(clinicaPlataformaProps),
   ClinicaPlataformaDetalhe: obj({
     ...clinicaPlataformaProps,
-    usage: obj({ dentists: int, secretaries: int, admins: int, patients: int, appointments: int, appointmentsLast30Days: int }, 'Cadastros ativos e agendamentos não cancelados da clínica (só números, sem dados pessoais). `appointmentsLast30Days` conta os agendamentos cadastrados nos últimos 30 dias (inclusive os marcados para o futuro).'),
+    usage: obj({ dentists: int, secretaries: int, admins: int, patients: int, appointments: int, appointmentsLast30Days: int }, 'Cadastros ativos e agendamentos não cancelados da clínica (só números, sem dados pessoais). `dentists` = quem atende pacientes (dentistas e administradores que atendem); `admins` e `secretaries` contam os perfis. `appointmentsLast30Days` conta os agendamentos cadastrados nos últimos 30 dias (inclusive os marcados para o futuro).'),
   }),
   VisaoGeral: obj({
     clinics: obj({ total: int, suspendedManually: int, byState: obj(Object.fromEntries(BILLING_STATES.map((state) => [state, int]))) }),
@@ -149,7 +165,9 @@ export const SCHEMAS = {
   ClinicaCriada: obj({ clinic: ref('Clinica'), admin: ref('Usuario') }),
 
   Dentista: obj({
-    id: uuid, userId: uuid, name: str, email: str, active: bool, cro: nstr, specialty: nstr,
+    id: uuid, userId: uuid, name: str, email: str,
+    role: { ...role, description: 'Perfil na clínica: `dentist`, ou `admin` para o administrador que também atende.' },
+    active: bool, cro: nstr, specialty: nstr,
     color: { type: 'string', description: 'Cor da agenda, #RRGGBB.' },
     payoutPercent: { type: ['number', 'null'], description: 'Percentual de repasse padrão (0 a 100).' },
   }),

@@ -43,15 +43,17 @@ describe('POST /api/users', () => {
     expect(res.body.email).toBe('maria@clinica.com');
   });
 
-  it('e-mail repetido: 409, na mesma clínica ou em outra', async () => {
+  it('e-mail repetido na mesma clínica: 409 ALREADY_MEMBER; em outra clínica vira convite (sem conta nova)', async () => {
     const a = await setupUser();
     const b = await setupUser();
     expect((await api().post('/api/users').set(a.headers).send(body())).status).toBe(201);
     const same = await api().post('/api/users').set(a.headers).send(body());
-    const other = await api().post('/api/users').set(b.headers).send(body());
     expect(same.status).toBe(409);
-    expect(same.body.error).toBe('E-mail já cadastrado.');
-    expect(other.status).toBe(409);
+    expect(same.body.code).toBe('ALREADY_MEMBER');
+    const other = await api().post('/api/users').set(b.headers).send(body());
+    expect(other.status).toBe(201);
+    expect(other.body).toMatchObject({ invitePending: true, clinicId: b.clinic.id });
+    expect(await db('users').where({ email: 'maria@clinica.com' })).toHaveLength(1);
   });
 
   it('o cadastro não falha se o e-mail de verificação não puder ser enviado', async () => {
@@ -155,7 +157,8 @@ describe('PATCH /api/users/:id', () => {
 
     expect((await api().post('/api/auth/refresh').send({ refreshToken: other.session.refreshToken })).status).toBe(401);
     expect((await api().get('/api/auth/me').set(other.headers)).status).toBe(401);
-    const active = await db('refresh_tokens').where({ user_id: other.user.id }).whereNull('revoked_at');
+    // as sessões desta clínica expiram (não são "revogadas", para não parecer reuso de token vazado e derrubar as outras clínicas)
+    const active = await db('refresh_tokens').where({ user_id: other.user.id }).whereNull('revoked_at').where('expires_at', '>', new Date());
     expect(active).toHaveLength(0);
   });
 

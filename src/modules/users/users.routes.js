@@ -12,5 +12,6 @@ router.get('/', validate({ query: listQuery }), controller.list);
 router.post('/', validate({ body: createUserSchema }), controller.create);
 router.get('/:id', validate({ params: idParams }), controller.get);
 router.patch('/:id', validate({ params: idParams, body: updateUserSchema }), controller.update);
+router.post('/:id/resend-invite', validate({ params: idParams }), controller.resendInvite);
 
 export default router;

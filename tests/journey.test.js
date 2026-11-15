@@ -4,7 +4,7 @@
 import { expect, it, vi } from 'vitest';
 import db from '../src/db/knex.js';
 import { signPlatformToken, verifyPlatformToken } from '../src/services/tokens.js';
-import { sendPasswordResetEmail, sendVerificationEmail } from '../src/services/mailer.js';
+import { sendInviteEmail, sendPasswordResetEmail, sendVerificationEmail } from '../src/services/mailer.js';
 import { spec, validated } from './helpers/contract.js';
 import { fake } from './helpers/fakeStorage.js';
 import { api, bearer, createPlatformAdmin } from './helpers/factories.js';
@@ -61,6 +61,32 @@ it('percorre o sistema inteiro e todas as rotas respondem como a documentação 
   await step('consultar dentista', api().get(`/api/dentists/${dentist.id}`).set(admin), 200);
   await step('alterar dentista', api().patch(`/api/dentists/${dentist.id}`).set(admin).send({ cro: 'CRO-MG 12345', payoutPercent: 40 }), 200);
 
+  // ---- a mesma pessoa em mais de uma clínica ----
+  // o Dr. Paulo abre o próprio consultório com o mesmo e-mail e a mesma senha, e atende nele como administrador
+  const own = await step('dentista abre a própria clínica', api().post('/api/signup').send({
+    clinicName: 'Consultório Dr. Paulo', template: 'empty', acceptTerms: true,
+    admin: { name: 'Paulo', email: 'paulo@sorriso.test', password: 'senha-do-paulo-1', attendsPatients: true },
+  }), 201);
+  expect(own.admin).toMatchObject({ id: dentistUser.id, role: 'admin', attendsPatients: true });
+  const choose = await step('login com duas clínicas', api().post('/api/auth/login').send({ email: 'paulo@sorriso.test', password: 'senha-do-paulo-1' }), 200);
+  expect(choose.clinics.map((c) => c.name)).toEqual(['Clínica Sorriso', 'Consultório Dr. Paulo']);
+  const paulo = await step('login escolhendo a clínica', api().post('/api/auth/login').send({ email: 'paulo@sorriso.test', password: 'senha-do-paulo-1', clinicId: own.clinic.id }), 200);
+  const pauloOwn = bearer(paulo.accessToken);
+  await step('minhas clínicas', api().get('/api/auth/clinics').set(pauloOwn), 200);
+  await step('trocar de clínica', api().post('/api/auth/switch-clinic').set(pauloOwn).send({ clinicId: created.clinic.id }), 200);
+  await step('alterar meu nome', api().patch('/api/auth/me').set(pauloOwn).send({ name: 'Dr. Paulo Lima' }), 200);
+  // ele convida a secretária da Sorriso (que já tem conta): ela aceita pelo link do e-mail
+  const invited = await step('convidar quem já tem conta', api().post('/api/users').set(pauloOwn).send({ name: 'Maria', email: 'maria@sorriso.test', role: 'secretary' }), 201);
+  expect(invited.invitePending).toBe(true);
+  await db('auth_tokens').where({ type: 'membership_invite' }).update({ created_at: new Date(Date.now() - 3_600_000) }); // passou o intervalo mínimo
+  await step('reenviar convite', api().post(`/api/users/${invited.id}/resend-invite`).set(pauloOwn), 200);
+  await step('aceitar convite pelo link', api().post('/api/auth/accept-invite').send({ token: tokenOf(sendInviteEmail) }), 200);
+  // e convida a Dra. Ana, que aceita logada na Sorriso
+  await step('convidar a administradora da Sorriso', api().post('/api/users').set(pauloOwn).send({ name: 'Ana', email: 'ana@sorriso.test', role: 'admin' }), 201);
+  const anaInvites = await step('meus convites', api().get('/api/auth/invitations').set(admin), 200);
+  expect(anaInvites.map((i) => i.clinic.id)).toEqual([own.clinic.id]);
+  await step('aceitar convite logado', api().post(`/api/auth/invitations/${own.clinic.id}/accept`).set(admin), 200);
+
   // ---- procedimentos e pacientes ----
   const procedure = await step('criar procedimento', api().post('/api/procedures').set(admin).send({ name: 'Restauração', priceCents: 20000, odontogramCondition: 'restoration' }), 201);
   await step('listar procedimentos', api().get('/api/procedures').set(admin), 200);
@@ -98,7 +124,7 @@ it('percorre o sistema inteiro e todas as rotas respondem como a documentação 
   await step('confirmar atendimento', api().post(`/api/appointments/${appointment.id}/status`).set(admin).send({ status: 'confirmed' }), 200);
 
   // ---- prontuário: o dentista atende outro horário e registra o que fez (a secretária não lê o prontuário) ----
-  const dentistLogin = await step('login do dentista', api().post('/api/auth/login').send({ email: 'paulo@sorriso.test', password: 'senha-do-paulo-1' }), 200);
+  const dentistLogin = await step('login do dentista', api().post('/api/auth/login').send({ email: 'paulo@sorriso.test', password: 'senha-do-paulo-1', clinicId: created.clinic.id }), 200);
   const asDentist = bearer(dentistLogin.accessToken);
   const visit = await step('agendar outro horário', api().post('/api/appointments').set(admin).send({
     patientId: patient.id, dentistId: dentist.id, startsAt: '2099-02-01T16:00:00.000Z', endsAt: '2099-02-01T17:00:00.000Z',

@@ -13,10 +13,13 @@ const SKIP_TABLES = new Set(['refresh_tokens', 'auth_tokens']);
 const SKIP_COLUMNS = new Set(['password_hash', 'token_hash']);
 const stripSecrets = (row) => Object.fromEntries(Object.entries(row).filter(([column]) => !SKIP_COLUMNS.has(column)));
 
-/** Todas as tabelas que têm clinic_id, lidas dentro do isolamento da clínica (nenhuma linha de outra clínica entra). */
+/**
+ * Todas as tabelas que têm clinic_id, lidas dentro do isolamento da clínica (nenhuma linha de outra clínica entra), mais as pessoas
+ * da equipe (users não tem clinic_id: o isolamento mostra só quem tem vínculo com a clínica).
+ */
 export async function exportData(clinicId) {
   const { rows } = await db.raw("SELECT table_name FROM information_schema.columns WHERE table_schema = 'public' AND column_name = 'clinic_id' ORDER BY table_name");
-  const tables = rows.map((r) => r.table_name).filter((name) => !SKIP_TABLES.has(name));
+  const tables = ['users', ...rows.map((r) => r.table_name)].filter((name) => !SKIP_TABLES.has(name)).sort();
   return withTenant(clinicId, async (trx) => {
     const data = {};
     for (const table of tables) data[table] = (await trx(table).select()).map(stripSecrets);

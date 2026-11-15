@@ -1,6 +1,7 @@
 import { z } from '../../config/zod.js';
 import { emailField, passwordField } from '../auth/auth.schemas.js';
 import { TEMPLATE_CODES } from './templates.js';
+import { phoneField } from '../../utils/fields.js';
 
 export const signupSchema = z.object({
   clinicName: z.string().trim().min(2, 'Informe o nome da clínica.').max(160, 'Nome muito longo.'),
@@ -9,6 +10,8 @@ export const signupSchema = z.object({
     name: z.string().trim().min(2, 'Informe seu nome.').max(160, 'Nome muito longo.'),
     email: emailField,
     password: passwordField,
+    phone: phoneField.optional(),
+    attendsPatients: z.boolean({ error: 'Informe se você também atende pacientes.' }).default(false),
   }),
   template: z.enum(TEMPLATE_CODES, { error: 'Escolha um modelo de clínica válido.' }).default('empty'),
   acceptTerms: z.literal(true, { error: 'É preciso aceitar os Termos de Uso e a Política de Privacidade.' }),

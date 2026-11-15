@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import db from '../src/db/knex.js';
-import { api, createClinic, createDentist, createUser, setupUser } from './helpers/factories.js';
+import { api, createClinic, createDentist, createUser, setupUser, updateMembership } from './helpers/factories.js';
 
 describe('perfil de dentista (criado pelo banco)', () => {
   it('usuário com perfil dentist ganha o perfil profissional, com os padrões', async () => {
@@ -34,7 +34,7 @@ describe('GET /api/dentists', () => {
       const names = res.body.map((d) => d.name);
       expect(names.filter((n) => ['Ana', 'Zeca'].includes(n))).toEqual(['Ana', 'Zeca']);
       expect(names).not.toContain('De Outra Clínica');
-      expect(Object.keys(res.body[0]).sort()).toEqual(['active', 'color', 'cro', 'email', 'id', 'name', 'payoutPercent', 'specialty', 'userId']);
+      expect(Object.keys(res.body[0]).sort()).toEqual(['active', 'color', 'cro', 'email', 'id', 'name', 'payoutPercent', 'role', 'specialty', 'userId']);
     }
   });
 
@@ -59,7 +59,7 @@ describe('GET /api/dentists/:id', () => {
     const { dentist } = await createDentist(clinic);
     const other = await createDentist(await createClinic());
     const demoted = await createDentist(clinic);
-    await db('users').where({ id: demoted.user.id }).update({ role: 'secretary' });
+    await updateMembership(demoted.user, { role: 'secretary' });
 
     expect((await api().get(`/api/dentists/${dentist.id}`).set(headers)).body.id).toBe(dentist.id);
     expect((await api().get(`/api/dentists/${other.dentist.id}`).set(headers)).status).toBe(404);
