@@ -15,6 +15,10 @@ npm run platform-admin:create -- "Seu Nome" voce@dominio.com "senha-com-8-ou-mai
 npm run dev                 # http://localhost:3000
 ```
 
+**Zerar o banco de desenvolvimento:** `npm run db:reset -- --yes` (apaga tudo e roda as migrations do zero; recusa em produção e
+fora de localhost). Não use `migrate:rollback --all` para isso: a migration de vínculos não volta quando alguém já está em mais de
+uma clínica, porque o modelo antigo (um usuário por clínica) não representa esse caso.
+
 O administrador da plataforma (você) cadastra as clínicas em `POST /api/platform/clinics`; cada clínica nasce com o
 primeiro administrador, que cadastra os demais usuários (secretária, dentistas).
 

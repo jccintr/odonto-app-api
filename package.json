@@ -13,6 +13,7 @@
     "dev": "node --watch src/index.js",
     "migrate": "knex migrate:latest",
     "migrate:rollback": "knex migrate:rollback --all",
+    "db:reset": "node src/scripts/db-reset.js",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage",
